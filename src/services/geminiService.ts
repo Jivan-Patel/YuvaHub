@@ -40,11 +40,10 @@ export async function fetchEventsAndSchemes(query: string = "", profile?: UserPr
 
     const currentDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     const prompt = `Current Date: ${currentDate}. 
-      List 12 ACTIVE and UPCOMING corporate hackathons, government schemes, and free/paid programs offered by companies or universities. 
-      IMPORTANT: Only include events that have deadlines or start dates AFTER ${currentDate}. Do not include expired events.
+      Find 8-10 ACTIVE corporate hackathons, government schemes, or programs. 
+      ONLY include events with deadlines AFTER ${currentDate}.
       ${profileContext}
-      Include: title, organization, type (hackathon, scheme, or program), a short description, location (city/state or "Online"), date/deadline, price (e.g., "Free", "Paid", or specific amount), and a link.
-      Format the response as a JSON array of objects following this structure:
+      Format as JSON array:
       {
         "id": "string",
         "title": "string",
@@ -57,11 +56,11 @@ export async function fetchEventsAndSchemes(query: string = "", profile?: UserPr
         "price": "string",
         "coordinates": { "lat": number, "lng": number }
       }
-      Search query context: ${query}`;
+      Query: ${query}`;
 
     let response;
     try {
-      // First attempt with Google Search tool - limited to 15s
+      // First attempt with Google Search tool - increased to 30s for reliability
       const searchPromise = ai.models.generateContent({
         model: "gemini-flash-latest",
         contents: prompt,
@@ -73,12 +72,12 @@ export async function fetchEventsAndSchemes(query: string = "", profile?: UserPr
 
       // Race against a timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Search timeout")), 15000)
+        setTimeout(() => reject(new Error("Search timeout")), 30000)
       );
 
       response = await Promise.race([searchPromise, timeoutPromise]) as any;
     } catch (searchError: any) {
-      console.warn("Gemini search tool failed or timed out, falling back to standard generation:", searchError.message);
+      console.info("Gemini search tool timed out, using internal knowledge fallback:", searchError.message);
       // Fallback attempt without tools - much faster
       response = await ai.models.generateContent({
         model: "gemini-flash-latest",

@@ -57,6 +57,8 @@ export default function App() {
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [showAdmin, setShowAdmin] = useState(false);
   const [fetchingSubscribers, setFetchingSubscribers] = useState(false);
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -254,7 +256,8 @@ export default function App() {
             serviceId,
             templateId,
             {
-              to_email: 'uditt490@gmail.com',
+              to_email: email, // Dynamic recipient
+              reply_to: 'uditt490@gmail.com',
               subscriber_email: email,
               timestamp: new Date().toLocaleString()
             },
@@ -295,6 +298,53 @@ export default function App() {
       addToast("Error", "Could not load subscribers.", "warning");
     } finally {
       setFetchingSubscribers(false);
+    }
+  };
+
+  const handleSendBroadcast = async () => {
+    if (!isAdmin || subscribers.length === 0 || !broadcastMessage) return;
+    if (!window.confirm(`Are you sure you want to send this broadcast to ${subscribers.length} subscribers? This uses your EmailJS daily quota.`)) return;
+    
+    setSendingBroadcast(true);
+    const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+    const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+    const publicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+
+    if (!serviceId || !templateId || !publicKey) {
+      addToast("Error", "EmailJS credentials missing.", "warning");
+      setSendingBroadcast(false);
+      return;
+    }
+
+    let successCount = 0;
+    try {
+      // Loop through subscribers and send one by one
+      // Note: This is a simple implementation, for large lists a backend is better
+      for (const sub of subscribers) {
+        try {
+          await emailjs.send(
+            serviceId,
+            templateId,
+            {
+              to_email: sub.email,
+              subscriber_email: sub.email,
+              message: broadcastMessage,
+              timestamp: new Date().toLocaleString()
+            },
+            publicKey
+          );
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to send email to ${sub.email}:`, err);
+        }
+      }
+      addToast("Broadcast Sent", `Successfully sent to ${successCount} subscribers.`, "success");
+      setBroadcastMessage("");
+    } catch (err) {
+      console.error("Broadcast error:", err);
+      addToast("Error", "Some emails failed to send.", "warning");
+    } finally {
+      setSendingBroadcast(false);
     }
   };
 
@@ -775,47 +825,68 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6">
-                {fetchingSubscribers ? (
-                  <div className="flex flex-col items-center justify-center py-20 gap-4">
-                    <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin" />
-                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Loading list...</p>
-                  </div>
-                ) : subscribers.length > 0 ? (
-                  <div className="space-y-3">
-                    {subscribers.map((sub, idx) => (
-                      <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between group hover:border-indigo-300 transition-colors">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 text-indigo-600 font-black text-xs">
-                            {idx + 1}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-slate-900">{sub.email}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                              {sub.subscribedAt?.toDate ? sub.subscribedAt.toDate().toLocaleString() : 'Just now'}
-                            </p>
+              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {/* Broadcast Section */}
+                <div className="bg-indigo-50/50 p-5 rounded-[24px] border border-indigo-100">
+                  <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <Bell className="w-3.5 h-3.5" /> Broadcast Newsletter
+                  </h4>
+                  <textarea 
+                    placeholder="Type your newsletter update here..."
+                    className="w-full h-32 p-4 bg-white border border-indigo-200 rounded-2xl text-sm focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all resize-none mb-3"
+                    value={broadcastMessage}
+                    onChange={(e) => setBroadcastMessage(e.target.value)}
+                  />
+                  <button 
+                    onClick={handleSendBroadcast}
+                    disabled={sendingBroadcast || !broadcastMessage || subscribers.length === 0}
+                    className="w-full py-3 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-indigo-100"
+                  >
+                    {sendingBroadcast ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" /> Sending...
+                      </>
+                    ) : (
+                      <>
+                        <ExternalLink className="w-4 h-4" /> Send to {subscribers.length} Fans
+                      </>
+                    )}
+                  </button>
+                  <p className="text-[10px] text-slate-400 font-bold mt-3 text-center uppercase tracking-wider">
+                    Be careful: Each recipient uses 1 EmailJS daily quota.
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Subscriber List</h4>
+                  {fetchingSubscribers ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-4">
+                      <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin" />
+                    </div>
+                  ) : subscribers.length > 0 ? (
+                    <div className="space-y-3">
+                      {subscribers.map((sub, idx) => (
+                        <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between group hover:border-indigo-300 transition-colors">
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 text-indigo-600 font-black text-xs">
+                              {idx + 1}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-900">{sub.email}</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                                {sub.subscribedAt?.toDate ? sub.subscribedAt.toDate().toLocaleString() : 'Just now'}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                        <button 
-                          onClick={() => {
-                            navigator.clipboard.writeText(sub.email);
-                            addToast("Copied", "Email address copied to clipboard.", "success");
-                          }}
-                          className="p-2 opacity-0 group-hover:opacity-100 hover:bg-white rounded-lg transition-all text-slate-400 hover:text-indigo-600 border border-transparent hover:border-slate-200"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-20">
-                    <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <User className="w-8 h-8 text-slate-300" />
+                      ))}
                     </div>
-                    <p className="text-slate-500 font-medium">No subscribers yet.</p>
-                  </div>
-                )}
+                  ) : (
+                    <div className="text-center py-10">
+                      <p className="text-slate-500 font-medium">No subscribers yet.</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex gap-3">

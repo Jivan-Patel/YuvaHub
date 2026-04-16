@@ -72,5 +72,77 @@ export const FALLBACK_EVENTS: Event[] = [
     link: "https://www.tcscodevita.com/",
     price: "Free",
     coordinates: { lat: 19.0760, lng: 72.8777 }
+  },
+  {
+    id: "fb-7",
+    title: "Meta Hacker Cup 2026",
+    organization: "Meta",
+    type: "hackathon",
+    description: "Meta's annual open programming competition that tests your problem-solving skills with algorithmic challenges.",
+    location: "Online",
+    date: "September - December 2026",
+    link: "https://www.facebook.com/codingcompetitions/hacker-cup",
+    price: "Free",
+    coordinates: { lat: 37.4848, lng: -122.1484 }
+  },
+  {
+    id: "fb-8",
+    title: "Post-Matric Scholarship Scheme",
+    organization: "Ministry of Minority Affairs",
+    type: "scheme",
+    description: "Scholarship for students belonging to minority communities to pursue higher education from Class 11 to Ph.D.",
+    location: "India",
+    date: "July - October 2026",
+    link: "https://scholarships.gov.in/",
+    price: "Free",
+    coordinates: { lat: 28.6139, lng: 77.2090 }
+  },
+  {
+    id: "fb-9",
+    title: "GitHub Octernships",
+    organization: "GitHub",
+    type: "program",
+    description: "Connects students with industry partners for paid remote internships to work on real-world open source projects.",
+    location: "Remote",
+    date: "Quarterly Batches",
+    link: "https://github.com/education/Octernships",
+    price: "Paid (Stipend)",
+    coordinates: { lat: 37.7749, lng: -122.4194 }
+  },
+  {
+    id: "fb-10",
+    title: "MLH Fellowship",
+    organization: "Major League Hacking",
+    type: "program",
+    description: "A 12-week internship alternative for aspiring software engineers to contribute to open source projects.",
+    location: "Remote",
+    date: "Spring, Summer, Fall Batches",
+    link: "https://fellowship.mlh.io/",
+    price: "Paid (Stipend)",
+    coordinates: { lat: 40.7128, lng: -74.0060 }
+  },
+  {
+    id: "fb-11",
+    title: "Flipkart GRiD 6.0",
+    organization: "Flipkart",
+    type: "hackathon",
+    description: "Flipkart's flagship engineering campus challenge to solve real-world e-commerce problems.",
+    location: "Online / India",
+    date: "July - September 2026",
+    link: "https://unstop.com/hackathons/flipkart-grid-60-software-development-track-flipkart-894234",
+    price: "Free",
+    coordinates: { lat: 12.9716, lng: 77.5946 }
+  },
+  {
+    id: "fb-12",
+    title: "Google Summer of Code (GSoC) 2026",
+    organization: "Google",
+    type: "program",
+    description: "A global, online program focused on bringing new contributors into open source software development.",
+    location: "Online",
+    date: "January - August 2026",
+    link: "https://summerofcode.withgoogle.com/",
+    price: "Paid (Stipend)",
+    coordinates: { lat: 37.4224, lng: -122.0842 }
   }
 ];
