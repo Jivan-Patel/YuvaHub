@@ -9,7 +9,7 @@ import {
   Briefcase, GraduationCap, X, Check, User, Sparkles, 
   BellOff, Settings, ChevronRight, Sliders, Globe, 
   Calendar, ArrowRight, LayoutGrid, List, AlertTriangle, RefreshCw,
-  Bookmark, BookmarkCheck, Trash2
+  Bookmark, BookmarkCheck, Trash2, Wifi, WifiOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchEventsAndSchemes } from './services/geminiService';
@@ -52,6 +52,7 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [subscribing, setSubscribing] = useState(false);
   const [subscribers, setSubscribers] = useState<any[]>([]);
@@ -116,7 +117,28 @@ export default function App() {
     }
     loadInitialData();
     getUserLocation();
-  }, [profile]);
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      addToast("Back Online", "Your internet connection has been restored.", "success");
+      // Try to fetch fresh data if we were using fallback
+      if (isFallback) {
+        loadInitialData(true);
+      }
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      addToast("Network Lost", "You are currently offline. Using cached data.", "warning");
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [profile, isFallback]);
 
   const addToast = useCallback((title: string, message: string, type: Toast['type'] = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -1071,10 +1093,20 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-2 sm:gap-4">
-              {apiKeyMissing && (
+              {!isOnline ? (
+                <div className="flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-bold border border-red-100">
+                  <WifiOff className="w-4 h-4" />
+                  <span className="hidden sm:inline">No Internet</span>
+                </div>
+              ) : apiKeyMissing || isFallback ? (
                 <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold border border-amber-100">
                   <AlertTriangle className="w-4 h-4" />
                   <span className="hidden sm:inline">Offline Mode (Fallback Data)</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold border border-emerald-100">
+                  <Wifi className="w-4 h-4" />
+                  <span className="hidden sm:inline">Online (AI Active)</span>
                 </div>
               )}
               
