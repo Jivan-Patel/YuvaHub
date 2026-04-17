@@ -24,6 +24,21 @@
         "subscribedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["email", "subscribedAt"]
+    },
+    "Registration": {
+      "title": "Event Registration",
+      "description": "Records of users registering for specific events or schemes.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string", "format": "email" },
+        "userLocation": { "type": "string" },
+        "userAge": { "type": "number" },
+        "eventId": { "type": "string" },
+        "eventTitle": { "type": "string" },
+        "registeredAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userEmail", "userLocation", "userAge", "eventId", "eventTitle", "registeredAt"]
     }
   },
   "firestore": {
@@ -34,6 +49,10 @@
     "/newsletter/{email}": {
       "schema": "NewsletterSubscriber",
       "description": "Newsletter subscription document indexed by email."
+    },
+    "/registrations/{regId}": {
+      "schema": "Registration",
+      "description": "Collection of all user registrations for events."
     }
   }
 }

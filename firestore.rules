@@ -3,6 +3,30 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields:
+    //   - location: string (required)
+    //   - age: number (required)
+    //   - interests: list (required)
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - bookmarkedEventIds: list (optional)
+    //   - registeredEventIds: list (optional)
+    //
+    // Collection: registrations
+    // Fields:
+    //   - userId: string (required)
+    //   - userEmail: string (required)
+    //   - userLocation: string (required)
+    //   - userAge: number (required)
+    //   - eventId: string (required)
+    //   - eventTitle: string (required)
+    //   - registeredAt: timestamp (required)
+
+    // ===============================================================
     // Helper Functions
     // ===============================================================
     function isAuthenticated() {
@@ -26,29 +50,44 @@ service cloud.firestore {
     // Collection: users
     // ===============================================================
     match /users/{userId} {
-      // Users can only read their own profile
       allow read: if isOwner(userId) || isAdmin();
       
-      // Users can create/update their own profile
       allow create, update: if isOwner(userId) && 
         request.resource.data.keys().hasAll(['location', 'age', 'interests', 'uid', 'email']) &&
         request.resource.data.location is string &&
         request.resource.data.age is number &&
         request.resource.data.interests is list &&
         request.resource.data.uid == request.auth.uid &&
-        request.resource.data.email == request.auth.token.email;
+        request.resource.data.email == request.auth.token.email &&
+        (!('bookmarkedEventIds' in request.resource.data) || request.resource.data.bookmarkedEventIds is list) &&
+        (!('registeredEventIds' in request.resource.data) || request.resource.data.registeredEventIds is list);
+    }
+
+    // ===============================================================
+    // Collection: registrations
+    // ===============================================================
+    match /registrations/{regId} {
+      allow create: if isAuthenticated() && 
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.userEmail == request.auth.token.email &&
+        request.resource.data.registeredAt == request.time &&
+        request.resource.data.userLocation is string &&
+        request.resource.data.userAge is number &&
+        request.resource.data.eventId is string &&
+        request.resource.data.eventTitle is string;
+        
+      allow read, delete: if isAdmin();
+      allow update: if false;
     }
 
     // ===============================================================
     // Collection: newsletter
     // ===============================================================
     match /newsletter/{email} {
-      // Anyone can subscribe or update their subscription
       allow create, update: if isValidEmail(email) && 
         request.resource.data.keys().hasAll(['email', 'subscribedAt']) &&
         request.resource.data.email == email;
         
-      // Only admin can see or delete subscribers
       allow read, delete: if isAdmin();
     }
   }

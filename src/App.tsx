@@ -9,15 +9,15 @@ import {
   Briefcase, GraduationCap, X, Check, User, Sparkles, 
   BellOff, Settings, ChevronRight, Sliders, Globe, 
   Calendar, ArrowRight, LayoutGrid, List, AlertTriangle, RefreshCw,
-  Bookmark, BookmarkCheck, Trash2, Wifi, WifiOff
+  Bookmark, BookmarkCheck, Trash2, Wifi, WifiOff, Clock, Mail, ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchEventsAndSchemes, getSearchSuggestions } from './services/geminiService';
-import { Event, UserLocation, UserProfile, Notification } from './types';
+import { Event, UserLocation, UserProfile, Notification, UserRegistration, Message } from './types';
 import { cn } from './lib/utils';
 import { auth, signInWithGoogle, signInWithApple, logout, db } from './lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy, where } from 'firebase/firestore';
 import emailjs from '@emailjs/browser';
 
 const INTEREST_OPTIONS = [
@@ -34,6 +34,7 @@ interface Toast {
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [events, setEvents] = useState<Event[]>(() => {
     const saved = localStorage.getItem('cached_events');
     return saved ? JSON.parse(saved) : [];
@@ -66,6 +67,12 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [registeringId, setRegisteringId] = useState<string | null>(null);
+  const [showConfirmReg, setShowConfirmReg] = useState<Event | null>(null);
+  const [showSuccessReg, setShowSuccessReg] = useState<UserRegistration | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [userRegistrations, setUserRegistrations] = useState<UserRegistration[]>([]);
+  const [visibleCount, setVisibleCount] = useState(6);
   const [notifications, setNotifications] = useState<Notification[]>(() => {
     const saved = localStorage.getItem('user_notifications');
     return saved ? JSON.parse(saved) : [];
@@ -84,6 +91,11 @@ export default function App() {
     notificationsEnabled: false
   });
 
+  // Effects
+  useEffect(() => {
+    setVisibleCount(6);
+  }, [searchQuery, filterType]);
+
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -98,10 +110,26 @@ export default function App() {
             setTempProfile(data);
             localStorage.setItem('user_profile', JSON.stringify(data));
           }
+
+          // Fetch registrations
+          const regsQuery = query(
+            collection(db, 'registrations'),
+            where('userId', '==', firebaseUser.uid),
+            orderBy('registeredAt', 'desc')
+          );
+          const regsSnapshot = await getDocs(regsQuery);
+          const regs = regsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as UserRegistration[];
+          setUserRegistrations(regs);
         } catch (err) {
-          console.error("Error syncing profile:", err);
+          console.error("Error syncing profile/registrations:", err);
         }
+      } else {
+        setUserRegistrations([]);
       }
+      setIsAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
@@ -139,7 +167,7 @@ export default function App() {
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('form')) {
+      if (!target.closest('form') && !target.closest('.suggestions-dropdown')) {
         setShowSuggestions(false);
       }
     };
@@ -421,7 +449,7 @@ export default function App() {
           uid: user.uid,
           email: user.email,
           updatedAt: serverTimestamp()
-        });
+        }, { merge: true });
       } catch (err) {
         console.error("Error syncing bookmark:", err);
       }
@@ -432,6 +460,137 @@ export default function App() {
       isBookmarked ? "Removed from your saved list." : "Saved to your bookmarks.",
       "success"
     );
+  };
+
+  const directRegister = async (event: Event) => {
+    if (!user) {
+      setShowLoginModal(true);
+      addToast("Login Required", "Please sign in to register directly for events.", "info");
+      return;
+    }
+
+    if (!profile || !profile.location || !profile.age) {
+      setShowSettings(true);
+      addToast("Profile Incomplete", "Please complete your location and age to enable direct registration.", "warning");
+      return;
+    }
+
+    if (profile.registeredEventIds?.includes(event.id)) {
+      addToast("Already Registered", "You have already registered for this opportunity.", "info");
+      return;
+    }
+
+    setShowConfirmReg(event);
+  };
+
+  const confirmDirectRegister = async () => {
+    if (!showConfirmReg || !user || !profile) return;
+    
+    const event = showConfirmReg;
+    setShowConfirmReg(null);
+    setRegisteringId(event.id);
+    
+    try {
+      // 1. Create registration record in Firestore
+      const regDoc = await addDoc(collection(db, 'registrations'), {
+        userId: user.uid,
+        userEmail: user.email,
+        userName: user.displayName,
+        userLocation: profile.location,
+        userAge: profile.age,
+        eventId: event.id,
+        eventTitle: event.title,
+        registeredAt: serverTimestamp()
+      });
+
+      // Update local registrations list
+      const newReg: UserRegistration = {
+        id: regDoc.id,
+        userId: user.uid,
+        userEmail: user.email,
+        userLocation: profile.location,
+        userAge: profile.age,
+        eventId: event.id,
+        eventTitle: event.title,
+        registeredAt: { toDate: () => new Date() } // Local mock timestamp
+      };
+      setUserRegistrations(prev => [newReg, ...prev]);
+
+      // 2. Update user profile with registered event ID
+      const newRegistrations = [...(profile.registeredEventIds || []), event.id];
+      const updatedProfile = { ...profile, registeredEventIds: newRegistrations };
+      
+      setProfile(updatedProfile);
+      setTempProfile(updatedProfile);
+      localStorage.setItem('user_profile', JSON.stringify(updatedProfile));
+
+      await setDoc(doc(db, 'users', user.uid), {
+        ...updatedProfile,
+        uid: user.uid,
+        email: user.email,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // 3. Send Confirmation Email (Async, non-blocking)
+      const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+      const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+      const publicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+
+      const applicationId = regDoc.id.substring(0, 8).toUpperCase();
+      
+      // In-App Message Generation
+      const officialMessage: Message = {
+        id: Math.random().toString(36).substring(2, 9),
+        sender: "EventHub Official",
+        subject: `Registration Confirmed: ${event.title}`,
+        content: `Dear ${user.displayName || 'User'},\n\nWe are pleased to confirm that your application for ${event.title} has been successfully received.\n\nApplication Details:\n- Registration ID: #${applicationId}\n- Opportunity: ${event.title}\n- Organization: ${event.organization}\n- Date: ${new Date().toLocaleDateString()}\n\nWhat happens next?\nThe organizer will review your profile details (Location: ${profile.location}, Age: ${profile.age}) and reach out to you directly at this email address if you are shortlisted.\n\nYou can always view your submission status in your EventHub account under 'My Applications'.\n\nBest regards,\nThe EventHub Team`,
+        timestamp: new Date().toISOString(),
+        read: false
+      };
+
+      // Add to profile state
+      const profileWithMail = {
+        ...updatedProfile,
+        messages: [officialMessage, ...(updatedProfile.messages || [])]
+      };
+      setProfile(profileWithMail);
+      setTempProfile(profileWithMail);
+
+      // Persistence to Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        messages: profileWithMail.messages
+      }, { merge: true });
+
+      if (serviceId && templateId && publicKey) {
+        emailjs.send(
+          serviceId,
+          templateId,
+          {
+            to_name: user.displayName || 'User',
+            to_email: user.email,
+            event_title: event.title,
+            application_id: applicationId,
+            registration_date: new Date().toLocaleDateString(),
+            app_url: import.meta.env.VITE_APP_URL || window.location.origin
+          },
+          publicKey
+        ).then(() => {
+          console.log("Confirmation email sent successfully!");
+        }).catch((error) => {
+          console.error("Failed to send confirmation email:", error);
+        });
+      }
+
+      setShowSuccessReg(newReg);
+      addToast("Registration Successful!", `You have successfully registered for ${event.title}.`, "success");
+      addNotification("Registration Confirmed", `You're all set for ${event.title}! Application ID: ${regDoc.id.substring(0, 8)}`, "system");
+
+    } catch (err) {
+      console.error("Registration error:", err);
+      addToast("Registration Failed", "Something went wrong. Please try again later.", "warning");
+    } finally {
+      setRegisteringId(null);
+    }
   };
 
   const addNotification = useCallback((title: string, message: string, type: Notification['type'], link?: string) => {
@@ -674,6 +833,119 @@ export default function App() {
                 <p className="mt-8 text-center text-xs text-slate-400 font-medium">
                   By continuing, you agree to our <span className="underline cursor-pointer">Terms of Service</span> and <span className="underline cursor-pointer">Privacy Policy</span>.
                 </p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showConfirmReg && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowConfirmReg(null)}
+              className="fixed inset-0 z-[150] bg-slate-900/40 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[160] w-full max-w-md p-4"
+            >
+              <div className="bg-white rounded-[40px] p-8 shadow-2xl border border-slate-100 overflow-hidden">
+                <div className="text-center mb-8">
+                  <div className="bg-amber-100 w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                    <AlertTriangle className="w-8 h-8 text-amber-600" />
+                  </div>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Confirm Registration</h2>
+                  <p className="text-slate-500 font-medium text-sm px-4">
+                    You're about to apply for <span className="font-bold text-indigo-600">{showConfirmReg.title}</span>. the following details will be shared with the organizer:
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 rounded-3xl p-6 mb-8 space-y-4 border border-slate-100">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Full Name</span>
+                    <span className="text-slate-900 font-black">{user?.displayName || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Email Address</span>
+                    <span className="text-slate-900 font-black">{user?.email}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Location</span>
+                    <span className="text-slate-900 font-black">{profile?.location}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={confirmDirectRegister}
+                    className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 active:scale-95"
+                  >
+                    Confirm & Apply Now
+                  </button>
+                  <button 
+                    onClick={() => setShowConfirmReg(null)}
+                    className="w-full py-4 bg-white text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:text-slate-600 transition-all active:scale-95"
+                  >
+                    Go Back
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSuccessReg && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSuccessReg(null)}
+              className="fixed inset-0 z-[170] bg-emerald-950/20 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.8, y: 100 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 100 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[180] w-full max-w-sm p-4"
+            >
+              <div className="bg-white rounded-[40px] p-8 text-center shadow-3xl border border-emerald-100 relative overflow-hidden">
+                <div className="absolute top-0 left-0 right-0 h-2 bg-emerald-500" />
+                
+                <div className="bg-emerald-500 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-8 shadow-xl shadow-emerald-100 rotate-12">
+                  <Check className="w-10 h-10 text-white" />
+                </div>
+                
+                <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">Application Sent!</h2>
+                <p className="text-slate-500 font-medium mb-8">
+                  Your registration for <span className="text-emerald-600 font-bold">{showSuccessReg.eventTitle}</span> has been confirmed.
+                </p>
+
+                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 mb-8">
+                  <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Application ID</p>
+                  <code className="text-xl font-black text-emerald-700 leading-none">
+                    #{showSuccessReg.id.substring(0, 8).toUpperCase()}
+                  </code>
+                </div>
+
+                <p className="text-xs text-slate-400 font-medium mb-8">
+                  A record of this application has been added to your profile. You can view all your registrations in the Preferences panel.
+                </p>
+
+                <button 
+                  onClick={() => setShowSuccessReg(null)}
+                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-600 transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                  Got it! <ArrowRight className="w-4 h-4" />
+                </button>
               </div>
             </motion.div>
           </>
@@ -1104,6 +1376,87 @@ export default function App() {
                     </button>
                   </div>
                 </section>
+
+                <section>
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">My Applications</h3>
+                  {userRegistrations.length > 0 ? (
+                    <div className="space-y-3">
+                      {userRegistrations.map((reg) => (
+                        <div key={reg.id} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:border-indigo-200 transition-all group">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-bold text-slate-900 text-sm truncate group-hover:text-indigo-600 transition-colors">
+                                {reg.eventTitle}
+                              </h4>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1 flex items-center gap-1.5">
+                                <Clock className="w-3 h-3" />
+                                {reg.registeredAt?.toDate ? new Date(reg.registeredAt.toDate()).toLocaleDateString() : 'Just now'}
+                              </p>
+                            </div>
+                            <div className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter shrink-0 flex items-center gap-1 border border-emerald-100/50">
+                              <Check className="w-3 h-3" /> Confirmed
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                      <Sparkles className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                      <p className="text-sm font-bold text-slate-500 mb-1">No applications yet</p>
+                      <p className="text-[10px] text-slate-400 font-medium">Your Fast Registrations will appear here</p>
+                    </div>
+                  )}
+                </section>
+
+                <section>
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Official Correspondence</h3>
+                  {tempProfile.messages && tempProfile.messages.length > 0 ? (
+                    <div className="space-y-3">
+                      {tempProfile.messages.map((msg) => (
+                        <div key={msg.id} className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                          <button 
+                            onClick={() => setSelectedMessage(selectedMessage?.id === msg.id ? null : msg)}
+                            className="w-full p-4 flex items-start text-left hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="bg-indigo-50 p-2 rounded-xl mr-3">
+                              <Mail className="w-4 h-4 text-indigo-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-start mb-0.5">
+                                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">{msg.sender}</span>
+                                <span className="text-[10px] text-slate-400 font-bold">{new Date(msg.timestamp).toLocaleDateString()}</span>
+                              </div>
+                              <h4 className="font-bold text-slate-900 text-sm truncate">{msg.subject}</h4>
+                            </div>
+                            <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform ml-2 shrink-0", selectedMessage?.id === msg.id && "rotate-180")} />
+                          </button>
+                          
+                          <AnimatePresence>
+                            {selectedMessage?.id === msg.id && (
+                              <motion.div 
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden bg-slate-50 border-t border-slate-100"
+                              >
+                                <div className="p-4 text-xs text-slate-600 leading-relaxed whitespace-pre-wrap font-medium">
+                                  {msg.content}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                      <Mail className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                      <p className="text-sm font-bold text-slate-500 mb-1">In-App Inbox Empty</p>
+                      <p className="text-[10px] text-slate-400 font-medium">Important notices will appear here</p>
+                    </div>
+                  )}
+                </section>
               </div>
 
               <div className="p-6 border-t border-slate-100 bg-slate-50/50">
@@ -1146,7 +1499,9 @@ export default function App() {
                 </div>
               ) : null}
               
-              {user ? (
+              {isAuthLoading ? (
+                <div className="w-24 h-9 bg-slate-100 animate-pulse rounded-xl" />
+              ) : user ? (
                 <div className="flex items-center gap-2">
                   <div className="hidden sm:flex flex-col items-end mr-2">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Logged in as</p>
@@ -1460,7 +1815,7 @@ export default function App() {
             "grid gap-6",
             viewMode === 'grid' ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3" : "grid-cols-1"
           )}>
-            {filteredEvents.map((event) => (
+            {filteredEvents.slice(0, visibleCount).map((event) => (
               <motion.div
                 layout
                 key={event.id}
@@ -1541,20 +1896,65 @@ export default function App() {
                     <span>{event.date}</span>
                   </div>
                   
-                  <a
-                    href={event.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={cn(
-                      "w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-600 transition-all group-hover:shadow-xl active:scale-[0.98]",
-                      viewMode === 'list' && "md:mt-4"
-                    )}
-                  >
-                    Apply Now <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </a>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      onClick={() => directRegister(event)}
+                      disabled={registeringId === event.id || profile?.registeredEventIds?.includes(event.id)}
+                      className={cn(
+                        "flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-[0.98]",
+                        profile?.registeredEventIds?.includes(event.id)
+                          ? "bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-default"
+                          : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100"
+                      )}
+                    >
+                      {registeringId === event.id ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Processing...
+                        </>
+                      ) : profile?.registeredEventIds?.includes(event.id) ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Registered
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 text-indigo-200" />
+                          Fast Register
+                        </>
+                      )}
+                    </button>
+
+                    <a
+                      href={event.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={cn(
+                        "flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-800 transition-all active:scale-[0.98]",
+                        viewMode === 'list' && "md:mt-0"
+                      )}
+                    >
+                      Official Link <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
                 </div>
               </motion.div>
             ))}
+          </div>
+        )}
+
+        {!loading && filteredEvents.length > visibleCount && (
+          <div className="mt-12 text-center">
+            <button 
+              onClick={() => setVisibleCount(prev => prev + 6)}
+              className="px-10 py-5 bg-white border-2 border-slate-200 rounded-[28px] text-slate-900 font-black text-sm uppercase tracking-widest hover:border-indigo-600 hover:text-indigo-600 transition-all active:scale-[0.98] shadow-sm flex items-center gap-3 mx-auto group"
+            >
+              <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
+              Load More Opportunities
+            </button>
+            <p className="mt-4 text-xs font-bold text-slate-400 uppercase tracking-widest">
+              Showing {visibleCount} of {filteredEvents.length} results
+            </p>
           </div>
         )}
 

@@ -20,6 +20,28 @@ export interface UserProfile {
   interests: string[];
   notificationsEnabled: boolean;
   bookmarkedEventIds?: string[];
+  registeredEventIds?: string[];
+  messages?: Message[];
+}
+
+export interface Message {
+  id: string;
+  sender: string;
+  subject: string;
+  content: string;
+  timestamp: string;
+  read: boolean;
+}
+
+export interface UserRegistration {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userLocation: string;
+  userAge: number | '';
+  eventId: string;
+  eventTitle: string;
+  registeredAt: any;
 }
 
 export interface UserLocation {
