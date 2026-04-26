@@ -1040,8 +1040,12 @@ export default function App() {
                   <input 
                     type="email" 
                     value={tempProfile.email}
-                    disabled
-                    className="w-full px-5 py-4 bg-slate-100 border border-slate-200 rounded-2xl text-sm font-bold opacity-70 cursor-not-allowed"
+                    onChange={(e) => setTempProfile(prev => ({ ...prev, email: e.target.value }))}
+                    disabled={!!user}
+                    className={cn(
+                      "w-full px-5 py-4 border border-slate-200 rounded-2xl text-sm font-bold transition-all",
+                      user ? "bg-slate-100 opacity-70 cursor-not-allowed" : "bg-slate-50 focus:bg-white focus:border-indigo-500"
+                    )}
                   />
                 </div>
                 <div>
@@ -1065,12 +1069,22 @@ export default function App() {
               </div>
 
               <div className="flex items-center justify-between pt-6 border-t border-slate-100">
-                <button 
-                  onClick={handleSignOut}
-                  className="text-red-500 text-xs font-black uppercase tracking-widest hover:bg-red-50 px-4 py-2 rounded-xl transition-colors"
-                >
-                  Logout
-                </button>
+                {user ? (
+                  <button 
+                    onClick={handleSignOut}
+                    className="text-red-500 text-xs font-black uppercase tracking-widest hover:bg-red-50 px-4 py-2 rounded-xl transition-colors"
+                  >
+                    Logout
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => setShowLoginModal(true)}
+                    className="flex items-center gap-2 text-indigo-600 text-xs font-black uppercase tracking-widest hover:bg-indigo-50 px-4 py-2 rounded-xl transition-colors"
+                  >
+                    <User className="w-4 h-4" />
+                    Sign In
+                  </button>
+                )}
                 <button 
                   onClick={handleSaveProfile}
                   disabled={isUpdating}
@@ -1235,7 +1249,7 @@ export default function App() {
               { id: 'recommendations', label: 'For You', icon: Sparkles, badge: 'New' },
               { id: 'tracker', label: 'Tracker', icon: Calendar },
               { id: 'community', label: 'Community', icon: Users },
-              { id: 'profile', label: 'My Profile', icon: User },
+              { id: 'profile', label: user ? 'My Profile' : 'Login / Profile', icon: User },
             ].map((item) => (
               <button
                 key={item.id}
@@ -1304,7 +1318,7 @@ export default function App() {
             { id: 'discover', label: 'Home', icon: Globe },
             { id: 'recommendations', label: 'For You', icon: Sparkles },
             { id: 'tracker', label: 'Tracker', icon: Calendar },
-            { id: 'profile', label: 'Profile', icon: User },
+            { id: 'profile', label: user ? 'Profile' : 'Sign In', icon: User },
           ].map((item) => (
             <button
               key={item.id}
