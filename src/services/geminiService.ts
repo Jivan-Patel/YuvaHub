@@ -328,3 +328,33 @@ export async function getSmartRefinements(query: string, profile: UserProfile | 
     return [];
   }
 }
+
+export async function refineSearchQueryWithAI(query: string, profile: UserProfile | null): Promise<string> {
+  if (!query || !profile) return query;
+  
+  try {
+    const ai = getAiClient();
+    if (!ai) return query;
+
+    const prompt = `Task: Refine the user's search query to be highly relevant to their student profile.
+    User Query: "${query}"
+    User Profile: Skills: ${profile.skills?.join(", ")}, Interests: ${profile.interests?.join(", ")}, College: ${profile.college}
+    
+    Instruction: Transform the simple query into a more specific, professional search term that would yield better results for this specific user. 
+    Example: Query "hackathons" + Skills "Web Dev" -> "Fullstack Web Development Hackathons for Students".
+    Return ONLY the refined query string. Max 6 words.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+      }
+    });
+
+    return response.text.trim().replace(/^"|"$/g, '') || query;
+  } catch (error) {
+    console.error("Query refinement error:", error);
+    return query;
+  }
+}

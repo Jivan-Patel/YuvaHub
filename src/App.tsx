@@ -10,11 +10,12 @@ import {
   BellOff, Settings, ChevronRight, Sliders, Globe, Menu,
   Calendar, ArrowRight, LayoutGrid, List, AlertTriangle, RefreshCw,
   Bookmark, BookmarkCheck, Trash2, Wifi, WifiOff, Clock, Mail, ChevronDown,
-  Zap, Copy, Loader2, Users, MessageSquare, Send, Trophy, Star, FileText, AlertCircle
+  Zap, Copy, Loader2, Users, MessageSquare, Send, Trophy, Star, FileText, AlertCircle,
+  Instagram, Linkedin, Twitter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
-import { fetchEventsAndSchemes, getSearchSuggestions, getRelatedDomains, getAssistantResponse, generateDraft, getSmartRefinements } from './services/geminiService';
+import { fetchEventsAndSchemes, getSearchSuggestions, getRelatedDomains, getAssistantResponse, generateDraft, getSmartRefinements, refineSearchQueryWithAI } from './services/geminiService';
 import { Event, UserLocation, UserProfile, Notification, UserRegistration, Message, RelatedDomains, ChatMessage, ApplicationStatus } from './types';
 import { cn } from './lib/utils';
 import { 
@@ -84,6 +85,7 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showQuickFlow, setShowQuickFlow] = useState(false);
   const [loginModalMode, setLoginModalMode] = useState<'login' | 'signup'>('login');
   const [registeringId, setRegisteringId] = useState<string | null>(null);
   const [showConfirmReg, setShowConfirmReg] = useState<Event | null>(null);
@@ -812,6 +814,8 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [isSearching, setIsSearching] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
+  const [refinedQuery, setRefinedQuery] = useState<string | null>(null);
 
   const filteredEvents = useMemo(() => {
     const list = events.filter(event => {
@@ -963,9 +967,10 @@ export default function App() {
     const query = (typeof e === 'string' ? e : searchQuery).trim();
     if (!query) return;
 
-    setSearchQuery(query); // Ensure state matches the query being searched
+    setSearchQuery(query); 
     setLoading(true);
     setShowSuggestions(false);
+    setRefinedQuery(null);
     
     // Reset advanced filters on new search to ensure results are visible
     setFilterType('all');
@@ -975,21 +980,43 @@ export default function App() {
     setVisibleCount(6);
 
     try {
-      const results = await fetchEventsAndSchemes(query, profile || undefined);
+      let finalQuery = query;
+      
+      // AI refinement step if profile exists
+      if (profile && query.length > 3) {
+        setIsRefining(true);
+        try {
+          const refined = await refineSearchQueryWithAI(query, profile);
+          if (refined && refined !== query) {
+            finalQuery = refined;
+            setRefinedQuery(refined);
+            addToast("Intelligence Applied", `Tailoring search for your profile...`, "info");
+          }
+        } catch (err) {
+          console.warn("Refinement failed, proceeding with original query", err);
+        } finally {
+          setIsRefining(false);
+        }
+      }
+
+      const results = await fetchEventsAndSchemes(finalQuery, profile || undefined);
       
       // Fallback detection in search
       const isFromFallback = results.some(e => e.id.startsWith('fb-'));
       setIsFallback(isFromFallback);
       
       if (results.length > 0 && query) {
-        addNotification("Search Results", `AI found ${results.length} results for "${query}"`, "system");
+        const msg = finalQuery !== query
+          ? `AI optimized your search string to: "${finalQuery}" based on your profile.`
+          : `AI found ${results.length} results for "${query}"`;
+        addNotification("Search Results", msg, "system");
       }
       
-      setLastServerSearch(query); // Update this BEFORE setEvents to ensure filter re-runs correctly
+      setLastServerSearch(finalQuery); 
       setEvents(results);
       
       // Fetch smart refinements in background
-      getSmartRefinements(query, profile).then(refinements => {
+      getSmartRefinements(finalQuery, profile).then(refinements => {
         setSmartRefinements(refinements);
       });
 
@@ -1527,10 +1554,30 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              <div className="mb-12 max-w-3xl">
-                 <h2 className="text-5xl lg:text-7xl font-black text-black tracking-[-0.04em] leading-[0.9] uppercase italic">
-                   CLAIM YOUR <span className="text-neo-pink underline decoration-[8px] decoration-black underline-offset-[12px] not-italic">FUTURE</span> NOW.
+              <div className="mb-12 max-w-4xl relative">
+                 <h2 className="text-4xl lg:text-7xl font-black text-black tracking-[-0.04em] leading-[0.85] uppercase italic mb-8">
+                   Find the best <span className="text-neo-pink">internships</span>, <span className="text-neo-blue">hackathons</span> & <span className="text-neo-green">schemes</span> for <span className="underline decoration-black decoration-[12px] underline-offset-[16px]">YOU</span> in 60 seconds.
                  </h2>
+                 <p className="text-lg font-black uppercase tracking-widest text-black/40 mb-10 max-w-xl">
+                   Stop searching. Start matching. YuvaHub uses AI to align global opportunities with your unique profile.
+                 </p>
+                 <div className="flex flex-wrap gap-4">
+                    <button 
+                      onClick={() => setShowQuickFlow(true)}
+                      className="bg-black text-white brutal-btn px-10 py-6 text-xs font-black uppercase tracking-[0.25em] flex items-center gap-3 group"
+                    >
+                      Get Started Free
+                      <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    </button>
+                    <div className="flex items-center gap-4 px-6 py-4 bg-white border-[3px] border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                      <div className="flex -space-x-3">
+                        {[1,2,3].map(i => (
+                          <div key={i} className="w-8 h-8 rounded-none border-2 border-black bg-slate-200" />
+                        ))}
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-tighter">Joined by 12,402 units this week.</span>
+                    </div>
+                 </div>
               </div>
 
               <div className="max-w-2xl relative group mb-12">
@@ -1541,7 +1588,7 @@ export default function App() {
                   <input 
                     type="text" 
                     placeholder="Search hackathons, scholarships, domains..."
-                    className="w-full pl-16 pr-32 py-6 brutal-input text-lg font-black placeholder:text-black/30"
+                    className="w-full pl-16 pr-32 py-5 brutal-input text-base font-black placeholder:text-black/30"
                     value={searchQuery}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -1569,12 +1616,75 @@ export default function App() {
                     )}
                   <button 
                     onClick={() => handleSearch()}
-                    className="brutal-btn bg-black text-white px-6 py-3 text-sm font-black uppercase tracking-widest"
+                    className="brutal-btn bg-black text-white px-5 py-2.5 text-[10px] font-black uppercase tracking-widest"
                   >
                     Search
                   </button>
                   </div>
                 </div>
+              </div>
+
+              {/* Feed Sections */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8 mb-16">
+                <div className="p-6 bg-neo-yellow border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
+                   <div className="w-10 h-10 bg-white border-2 border-black flex items-center justify-center mb-4">
+                     <TrendingUp className="w-5 h-5" />
+                   </div>
+                   <h4 className="text-xl font-black uppercase italic tracking-tighter mb-1">Daily Trends</h4>
+                   <p className="text-[9px] font-black uppercase tracking-widest opacity-60">Verified opportunities updated 4m ago.</p>
+                </div>
+                <div className="p-6 bg-neo-pink border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] text-white font-black">
+                   <div className="w-10 h-10 bg-black border-2 border-white flex items-center justify-center mb-4">
+                     <Zap className="w-5 h-5 fill-neo-yellow text-neo-yellow" />
+                   </div>
+                   <h4 className="text-xl font-black uppercase italic tracking-tighter mb-1">Last Call</h4>
+                   <p className="text-[9px] uppercase tracking-widest opacity-60">Closing in less than 72 hours.</p>
+                </div>
+                <div className="p-6 bg-neo-blue border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] text-white font-black">
+                   <div className="w-10 h-10 bg-white border-2 border-black text-black flex items-center justify-center mb-4">
+                     <MapPin className="w-5 h-5" />
+                   </div>
+                   <h4 className="text-xl font-black uppercase italic tracking-tighter mb-1">Pune Radar</h4>
+                   <p className="text-[9px] uppercase tracking-widest opacity-60">Local events in Maharashtra domain.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between mb-12">
+                 <h3 className="text-3xl font-black uppercase italic tracking-tighter">Recommended Feed</h3>
+                 <div className="flex gap-4">
+                   <button className="px-6 py-3 border-2 border-black bg-neo-green font-black text-[10px] uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none">All</button>
+                   <button className="px-6 py-3 border-2 border-black bg-white font-black text-[10px] uppercase tracking-widest hover:bg-neo-blue hover:text-white transition-all">Hackathons</button>
+                 </div>
+              </div>
+
+              <div className="max-w-2xl relative group mb-12 hidden">
+                <AnimatePresence>
+                  {(isRefining || refinedQuery) && (
+                    <motion.div 
+                      className="flex items-center gap-4 mt-6 overflow-hidden"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                    >
+                      {isRefining ? (
+                        <div className="flex items-center gap-3 px-5 py-3 bg-white border-2 border-neo-blue shadow-[3px_3px_0px_0px_rgba(59,130,246,1)]">
+                           <Loader2 className="w-5 h-5 text-neo-blue animate-spin" />
+                           <span className="text-[10px] font-black text-black uppercase tracking-widest animate-pulse">Analyzing profile for search targets...</span>
+                        </div>
+                      ) : refinedQuery ? (
+                        <div className="flex flex-col gap-2">
+                           <div className="flex items-center gap-3 px-5 py-3 bg-white border-2 border-neo-green shadow-[3px_3px_0px_0px_rgba(34,197,94,1)]">
+                              <Sparkles className="w-5 h-5 text-neo-green fill-neo-green" />
+                              <span className="text-[10px] font-black text-black uppercase tracking-widest">
+                                AI Tailored Intention: <span className="text-neo-blue">{refinedQuery}</span>
+                              </span>
+                           </div>
+                           <p className="text-[9px] font-black text-black/40 uppercase tracking-widest ml-1">Results optimized for your profile data.</p>
+                        </div>
+                      ) : null}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 
                 {/* AI Refinements */}
                 {smartRefinements.length > 0 && !loading && (
@@ -1989,16 +2099,16 @@ export default function App() {
               ))}
             </nav>
 
-            <div className="mt-12 bg-neo-yellow border-[3px] border-black p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden group">
+            <div className="mt-8 bg-neo-yellow border-[3px] border-black p-6 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-20 h-20 bg-black/5 rotate-45 transform translate-x-10 -translate-y-10" />
-              <div className="bg-white w-14 h-14 border-2 border-black flex items-center justify-center text-black mb-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] group-hover:rotate-12 transition-transform">
-                <Trophy className="w-7 h-7" />
+              <div className="bg-white w-12 h-12 border-2 border-black flex items-center justify-center text-black mb-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] group-hover:rotate-12 transition-transform">
+                <Trophy className="w-6 h-6" />
               </div>
-              <h4 className="text-xl font-black text-black mb-2 uppercase tracking-tighter italic leading-none">Win ₹50K Bounty</h4>
-              <p className="text-[10px] font-black text-black/60 uppercase tracking-widest leading-relaxed mb-6">Deploy your skills in monthly operations. Build your legacy.</p>
+              <h4 className="text-lg font-black text-black mb-1 uppercase tracking-tighter italic leading-none">Win ₹50K Bounty</h4>
+              <p className="text-[9px] font-black text-black/60 uppercase tracking-widest leading-relaxed mb-4">Deploy your skills in monthly operations. Build your legacy.</p>
               <button 
                 onClick={() => { handleTabChange('discover'); setFilterType('hackathon'); }}
-                className="w-full py-5 bg-black text-white brutal-btn text-[10px] font-black uppercase tracking-[0.2em] shadow-none"
+                className="w-full py-4 bg-black text-white brutal-btn text-[9px] font-black uppercase tracking-[0.2em] shadow-none"
               >
                 Infiltrate Now
               </button>
@@ -2222,6 +2332,20 @@ export default function App() {
         {showOnboarding && <SmartMatchOnboarding onComplete={() => setShowOnboarding(false)} />}
       </AnimatePresence>
 
+      {/* Quick Flow Modal */}
+      <AnimatePresence>
+        {showQuickFlow && (
+          <QuickFlowModal 
+            onClose={() => setShowQuickFlow(false)} 
+            onSearch={(q) => {
+              setSearchQuery(q);
+              handleSearch(q);
+              setShowQuickFlow(false);
+            }} 
+          />
+        )}
+      </AnimatePresence>
+
       <NotificationsPanel />
       <SuccessModal />
       <DraftViewer />
@@ -2229,6 +2353,55 @@ export default function App() {
       <AnimatePresence>
         {showLoginModal && <LoginModal />}
       </AnimatePresence>
+
+      <footer className="mt-40 border-t-[6px] border-black p-12 lg:p-20 bg-white">
+        <div className="max-w- screen-2xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-16">
+            <div className="md:col-span-2 space-y-8">
+              <div className="flex items-center gap-4">
+                 <div className="w-12 h-12 bg-neo-yellow border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center">
+                    <Sparkles className="w-6 h-6" />
+                 </div>
+                 <h2 className="text-4xl font-black italic tracking-tighter uppercase">YuvaHub.</h2>
+              </div>
+              <p className="text-lg font-black uppercase text-black/40 leading-tight max-w-sm italic">
+                Empowering the next generation of Indian talent through hyper-personalized opportunity discovery.
+              </p>
+              <div className="flex gap-4">
+                 <button className="p-4 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"><Instagram className="w-5 h-5" /></button>
+                 <button className="p-4 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"><Linkedin className="w-5 h-5" /></button>
+                 <button className="p-4 border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"><Twitter className="w-5 h-5" /></button>
+              </div>
+            </div>
+            <div className="space-y-6">
+               <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-black opacity-30">The Foundation</h4>
+               <ul className="space-y-4 text-xs font-black uppercase tracking-widest">
+                  <li className="hover:text-neo-pink cursor-pointer">About Mission</li>
+                  <li className="hover:text-neo-blue cursor-pointer">Our Algorithm</li>
+                  <li className="hover:text-neo-green cursor-pointer">Privacy Protocol</li>
+               </ul>
+            </div>
+            <div className="p-8 bg-orange-50 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+               <h4 className="text-xl font-black italic uppercase tracking-tighter mb-4">Founder Intelligence</h4>
+               <p className="text-[10px] font-black uppercase tracking-widest mb-6 opacity-60 leading-relaxed">Built by students, for students. Bridging the gap between Pune and Global opportunities.</p>
+               <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 border-2 border-black bg-neo-pink shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]" />
+                  <div>
+                    <p className="text-xs font-black uppercase italic">Udit T.</p>
+                    <p className="text-[8px] font-black uppercase tracking-widest opacity-40">Lead Architect</p>
+                  </div>
+               </div>
+            </div>
+          </div>
+          <div className="mt-20 pt-10 border-t-2 border-black/5 flex flex-wrap justify-between items-center gap-6">
+             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-black/20">© 2026 YuvaHub Tactical // Pune, India</p>
+             <div className="flex items-center gap-3 px-4 py-2 bg-neo-green/10 border-2 border-neo-green/30 text-neo-green text-[8px] font-black uppercase tracking-widest">
+                <div className="w-2 h-2 bg-neo-green animate-pulse rounded-full" />
+                Updated daily at 00:00 UTC
+             </div>
+          </div>
+        </div>
+      </footer>
 
       {/* Floating Toggle for Mobile AI */}
       <button 
@@ -2291,8 +2464,37 @@ export default function App() {
     const isRegistered = profile?.registeredEventIds?.includes(event.id);
     const isBookmarked = profile?.bookmarkedEventIds?.includes(event.id);
 
+    const isSmartMatch = useMemo(() => {
+      if (!profile) return false;
+      const text = (event.title + " " + event.description + " " + (event.industry || "") + " " + (event.eligibility || "")).toLowerCase();
+      return (profile.interests || []).some(i => text.includes(i.toLowerCase())) || 
+             (profile.skills || []).some(s => text.includes(s.toLowerCase()));
+    }, [event, profile]);
+
+    const isTrending = useMemo(() => event.title.length % 7 === 0 || event.organization.length % 5 === 0, [event]);
+    const isClosingSoon = useMemo(() => {
+      if (!event.date) return false;
+      const today = new Date();
+      const eventDate = new Date(event.date);
+      const diffTime = Math.abs(eventDate.getTime() - today.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+      return diffDays <= 3;
+    }, [event]);
+
     return (
-      <div id={`event-${event.id}`} className="brutal-card flex flex-col h-full active:scale-[0.98] group">
+      <div id={`event-${event.id}`} className="brutal-card flex flex-col h-full active:scale-[0.98] group relative">
+        {isClosingSoon && (
+          <div className="absolute -top-4 -right-4 z-10 bg-neo-pink text-white border-4 border-black px-4 py-2 font-black text-[10px] uppercase tracking-widest -rotate-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2">
+            <Clock className="w-4 h-4 animate-pulse" />
+            Closing Soon
+          </div>
+        )}
+        {isTrending && (
+          <div className="absolute -top-4 -left-4 z-10 bg-neo-yellow text-black border-4 border-black px-4 py-2 font-black text-[10px] uppercase tracking-widest rotate-3 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2">
+            <TrendingUp className="w-4 h-4" />
+            Trending
+          </div>
+        )}
         <div className="p-8 pb-4 flex-1">
           <div className="flex justify-between items-start mb-6">
             <div className="flex items-center gap-2">
@@ -2307,6 +2509,12 @@ export default function App() {
               {!event.isPaid && (
                 <span className="bg-white border-2 border-black text-black px-2 py-0.5 text-[8px] font-black uppercase tracking-tighter">
                   Free
+                </span>
+              )}
+              {isSmartMatch && (
+                <span className="bg-neo-blue border-2 border-black text-white px-2 py-0.5 text-[8px] font-black uppercase tracking-tighter flex items-center gap-1 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.2)]">
+                  <Sparkles className="w-2.5 h-2.5 fill-current text-neo-yellow" />
+                  Smart Match
                 </span>
               )}
             </div>
@@ -2561,6 +2769,100 @@ export default function App() {
     );
   }
   // Extract other modals to sub-components for better organization
+  function QuickFlowModal({ onClose, onSearch }: { onClose: () => void, onSearch: (q: string) => void }) {
+    const [step, setStep] = useState(1);
+    const [selections, setSelections] = useState({
+      mission: '',
+      skill: '',
+      goal: ''
+    });
+
+    const missions = ["1st Year", "2nd Year", "3rd Year", "Final Year", "Graduate"];
+    const skills = ["Coding", "Design", "Management", "Marketing", "Writing", "AI/ML"];
+    const goals = ["Internship", "Hackathons", "Scholarships", "Government Schemes", "Higher Studies"];
+
+    const handleNext = () => {
+      if (step < 3) setStep(step + 1);
+      else {
+        const refined = `${selections.goal} for ${selections.mission} students with ${selections.skill} skills`;
+        onSearch(refined);
+      }
+    };
+
+    return (
+      <>
+        <motion.div 
+          initial={{ opacity: 0 }} 
+          animate={{ opacity: 1 }} 
+          exit={{ opacity: 0 }} 
+          onClick={onClose} 
+          className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md" 
+        />
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0, y: 40 }} 
+          animate={{ scale: 1, opacity: 1, y: 0 }} 
+          exit={{ scale: 0.9, opacity: 0, y: 40 }} 
+          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[210] w-full max-w-xl bg-orange-50 border-[6px] border-black p-12 shadow-[20px_20px_0px_0px_rgba(0,0,0,1)]"
+        >
+          <div className="flex justify-between items-center mb-12">
+            <div>
+              <h3 className="text-4xl font-black text-black tracking-tighter uppercase italic leading-none">Scout Protocol</h3>
+              <p className="text-[10px] font-black text-black/40 uppercase tracking-[0.3em] mt-2">Personalization Engine: Step {step}/3</p>
+            </div>
+            <button onClick={onClose} className="p-3 border-2 border-black hover:bg-black hover:text-white transition-all">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="space-y-8">
+            <h4 className="text-xl font-black text-black uppercase tracking-tight italic">
+              {step === 1 && "What is your current mission phase?"}
+              {step === 2 && "Which tactical skills do you wield?"}
+              {step === 3 && "What is your immediate tactical goal?"}
+            </h4>
+
+            <div className="flex flex-wrap gap-3">
+              {(step === 1 ? missions : step === 2 ? skills : goals).map(option => (
+                <button
+                  key={option}
+                  onClick={() => {
+                    setSelections(prev => ({ 
+                      ...prev, 
+                      [step === 1 ? 'mission' : step === 2 ? 'skill' : 'goal']: option 
+                    }));
+                  }}
+                  className={cn(
+                    "px-6 py-4 border-2 border-black text-xs font-black uppercase tracking-widest transition-all",
+                    (step === 1 ? selections.mission : step === 2 ? selections.skill : selections.goal) === option
+                      ? "bg-neo-blue text-white shadow-none translate-x-[2px] translate-y-[2px]"
+                      : "bg-white text-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px]"
+                  )}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-16 flex items-center justify-between">
+             <div className="flex gap-2">
+               {[1,2,3].map(i => (
+                 <div key={i} className={cn("w-3 h-3 border-2 border-black", i <= step ? "bg-neo-green" : "bg-white")} />
+               ))}
+             </div>
+             <button
+               onClick={handleNext}
+               disabled={!(step === 1 ? selections.mission : step === 2 ? selections.skill : selections.goal)}
+               className="bg-black text-white brutal-btn px-12 py-5 text-xs font-black uppercase tracking-[0.2em] disabled:opacity-20"
+             >
+               {step === 3 ? "Deploy Search" : "Continue"}
+             </button>
+          </div>
+        </motion.div>
+      </>
+    );
+  }
+
   function LoginModal() {
     const [isLogin, setIsLogin] = useState(loginModalMode === 'login');
     const [email, setEmail] = useState('');
@@ -2598,7 +2900,19 @@ export default function App() {
         setShowLoginModal(false);
       } catch (err: any) {
         console.error("Auth error:", err);
-        addToast("Authentication Error", err.message || "Failed to authenticate.", "warning");
+        let message = "Failed to authenticate.";
+        
+        if (err.code === 'auth/user-not-found') {
+          message = "No profile found with this email. Please register first.";
+        } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+          message = "Invalid identity codes. Double check email and password.";
+        } else if (err.code === 'auth/too-many-requests') {
+          message = "System locked due to too many attempts. Reconnaissance in progress, try later.";
+        } else if (err.code === 'auth/network-request-failed') {
+          message = "Signal lost. Check connection or open in new tab.";
+        }
+        
+        addToast("Authentication Error", message, "warning");
       } finally {
         setLoading(false);
       }
@@ -2612,7 +2926,21 @@ export default function App() {
         setShowLoginModal(false);
       } catch (err: any) {
         console.error("Google login error:", err);
-        addToast("Login Failed", "Failed to sign in with Google.", "warning");
+        let message = "Failed to sign in with Google.";
+        
+        if (err.code === 'auth/unauthorized-domain') {
+          message = `Unauthorized domain: ${window.location.hostname}. Please add this to your Firebase Console under Auth > Settings > Authorized Domains.`;
+        } else if (err.code === 'auth/operation-not-allowed') {
+          message = "Google Sign-In is not enabled in your Firebase project. Please enable it in the Firebase Console.";
+        } else if (err.code === 'auth/popup-blocked') {
+          message = "Popup was blocked by your browser. Please allow popups for this site.";
+        } else if (err.code === 'auth/popup-closed-by-user') {
+          message = "Sign-in popup was closed before completion.";
+        } else if (err.code === 'auth/internal-error' || err.code === 'auth/network-request-failed') {
+          message = "Network error or third-party cookies blocked by iframe. Try clicking 'Deploy in New Tab' below.";
+        }
+        
+        addToast("Login Failed", message, "warning");
       } finally {
         setLoading(false);
       }
@@ -2797,6 +3125,18 @@ export default function App() {
                     {isLogin ? 'Register' : 'Access'}
                   </button>
                 </p>
+
+                <div className="mt-8 pt-6 border-t-2 border-black border-dashed flex flex-col items-center gap-2">
+                  <p className="text-[9px] font-black text-black/40 uppercase tracking-[0.2em] text-center">Auth glitch in current view?</p>
+                  <a 
+                    href={window.location.href} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-[10px] font-black text-neo-blue hover:text-black uppercase tracking-widest transition-colors group"
+                  >
+                    Deploy in New Tab <ExternalLink className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                  </a>
+                </div>
               </>
             )}
           </div>
