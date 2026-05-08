@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Globe, PlusCircle, Users, User, Menu, X, Github, Linkedin, Instagram, Twitter, Bell, MessageSquare, Settings } from 'lucide-react';
+import { LayoutDashboard, Globe, PlusCircle, Users, User, Menu, X, Github, Linkedin, Instagram, Twitter, Bell, MessageSquare, Settings, Activity } from 'lucide-react';
 import { auth, signInWithGoogle, logout, db } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -13,6 +13,7 @@ import Mentorship from './components/Tabs/Mentorship';
 import Profile from './components/Tabs/Profile';
 import Community from './components/Tabs/Community';
 import SettingsTab from './components/Tabs/Settings';
+import AdminDashboard from './components/Admin/AdminDashboard';
 import NotificationDropdown from './components/ui/NotificationDropdown';
 
 function App() {
@@ -62,6 +63,8 @@ function App() {
     { id: 'community', label: 'Community', icon: MessageSquare },
     { id: 'profile', label: 'My Profile', icon: User },
     { id: 'settings', label: 'Settings', icon: Settings },
+    // Only show admin for specific user, but for demo showing for all or based on a condition
+    ...(user?.email === 'uditt490@gmail.com' ? [{ id: 'admin', label: 'Admin', icon: Activity }] : []),
   ];
 
   const renderContent = () => {
@@ -73,6 +76,7 @@ function App() {
       case 'community': return <Community user={user} profile={profile} />;
       case 'profile': return <Profile user={user} profile={profile} setProfile={setProfile} />;
       case 'settings': return <SettingsTab user={user} profile={profile} />;
+      case 'admin': return <AdminDashboard />;
       default: return <Dashboard user={user} profile={profile} />;
     }
   };
