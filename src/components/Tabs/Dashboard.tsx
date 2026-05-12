@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Target, Search, Compass, ShieldCheck, Loader2, ArrowRight, RefreshCw, Sparkles, Share2, FileText } from 'lucide-react';
 import { UserProfile } from '../../types';
-import { matchScoutProtocol, loadFeed, loadMoreFeed, generateApplyAssist } from '../../services/geminiService';
+import { fetchSmartFeed, fetchExploreFeed, trackInteraction, runScoutProtocolBackend, generateApplyAssistBackend } from '../../services/apiClient';
 import ShareModal from '../ui/ShareModal';
 import ApplyAssistModal from '../ui/ApplyAssistModal';
 
@@ -17,6 +17,8 @@ export default function Dashboard({ user, profile }: DashboardProps) {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [feedItems, setFeedItems] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [shareOpp, setShareOpp] = useState<{title: string, link: string} | null>(null);
   const [discoveryMode, setDiscoveryMode] = useState<'smart' | 'explore'>('smart');
@@ -37,29 +39,6 @@ export default function Dashboard({ user, profile }: DashboardProps) {
       const interval = setInterval(() => {
         loadInitialFeed(false, discoveryMode);
       }, 300000);
-
-      // Simulate live background updates (polling for new opportunities)
-      const liveUpdateInterval = setInterval(() => {
-        if (!loading && !loadingMore && feedItems.length > 0) {
-          // Fake 30% chance every 15 seconds to find a new live opportunity
-          if (Math.random() > 0.70) {
-            const simulatedLiveOpp = {
-              title: `Live Discovery: ${Math.random() > 0.5 ? 'Global' : 'Virtual'} Hackathon ${Math.floor(Math.random() * 1000)}`,
-              org: "Yuvahub Live Network",
-              type: "hackathon",
-              deadline: "5 days",
-              description: "A newly discovered hackathon automatically injected into your smart feed based on your interests.",
-              tags: profile.skills?.slice(0, 2) || ["Tech", "Coding"],
-              matchReason: "Live match based on your real-time profile activity.",
-              isNew: true,
-              isLive: true,
-              applyLink: "https://yuvahub.xyz"
-            };
-            setNewLiveItems(prev => [simulatedLiveOpp, ...prev]);
-            setHasNewUpdates(true);
-          }
-        }
-      }, 15000);
       
       // Also refresh on window focus
       const handleFocus = () => loadInitialFeed(false, discoveryMode);
@@ -67,11 +46,10 @@ export default function Dashboard({ user, profile }: DashboardProps) {
       
       return () => {
         clearInterval(interval);
-        clearInterval(liveUpdateInterval);
         window.removeEventListener('focus', handleFocus);
       };
     }
-  }, [user, profile, discoveryMode, feedItems.length, loading, loadingMore]);
+  }, [user, profile, discoveryMode]);
 
   const loadInitialFeed = async (force = false, mode = discoveryMode) => {
     // Only show full loading spinner for first load or force refresh
@@ -79,8 +57,12 @@ export default function Dashboard({ user, profile }: DashboardProps) {
     if (isFirstLoad || force) setLoading(true);
     
     try {
-      const results = await loadFeed({ ...profile, uid: user.uid, discoveryMode: mode }, force);
-      setFeedItems(results || []);
+      const fetchFn = mode === 'smart' ? () => fetchSmartFeed(profile, 1) : () => fetchExploreFeed(1);
+      const results = await fetchFn();
+      
+      setFeedItems(results.items || []);
+      setCurrentPage(1);
+      setHasNextPage(!!results.next_page);
       setLastUpdated(Date.now());
     } catch (e) {
       console.error(e);
@@ -90,11 +72,21 @@ export default function Dashboard({ user, profile }: DashboardProps) {
   };
 
   const handleLoadMore = async () => {
-    if (loadingMore || !profile || !user) return;
+    if (loadingMore || !hasNextPage) return;
     setLoadingMore(true);
     try {
-      const results = await loadMoreFeed({ ...profile, uid: user.uid, discoveryMode }, feedItems);
-      setFeedItems(results);
+      const nextPage = currentPage + 1;
+      const results = discoveryMode === 'smart' 
+        ? await fetchSmartFeed(profile, nextPage) 
+        : await fetchExploreFeed(nextPage);
+      
+      if (results.items?.length > 0) {
+        setFeedItems(prev => [...prev, ...results.items]);
+        setCurrentPage(nextPage);
+        setHasNextPage(!!results.next_page);
+      } else {
+        setHasNextPage(false);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -114,7 +106,7 @@ export default function Dashboard({ user, profile }: DashboardProps) {
     setShowScoutModal(false);
     
     try {
-      const results = await matchScoutProtocol(profile, finalData);
+      const results = await runScoutProtocolBackend(finalData, profile);
       setFeedItems(results.results ? results.results : (Array.isArray(results) ? results : []));
     } catch (e) {
       console.error(e);
@@ -131,11 +123,12 @@ export default function Dashboard({ user, profile }: DashboardProps) {
     setAssistLoading(true);
     
     try {
-      const result = await generateApplyAssist({
+      const result = await generateApplyAssistBackend({
         title: opp.title,
         organization: opp.org || opp.organization
       }, profile);
-      setAssistContent(result);
+      const content = typeof result === 'string' ? result : result.content;
+      setAssistContent(content || "Unable to generate draft.");
     } catch (e) {
       console.error(e);
       setAssistContent("Failed to generate application assistant draft. Please try again.");
@@ -248,10 +241,18 @@ export default function Dashboard({ user, profile }: DashboardProps) {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-12 clean-card">
             <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
-            <p className="text-gray-500 font-medium text-sm">Processing parameters via Gemini...</p>
+            <p className="text-gray-500 font-medium text-sm">Discovering more opportunities for you 🚀</p>
           </div>
-        ) : feedItems.length > 0 || newLiveItems.length > 0 ? (
+        ) : (feedItems.length > 0 || newLiveItems.length > 0) ? (
           <div className="space-y-8 relative">
+
+            {/* Fallback Banner */}
+            {feedItems.some(i => i.isFallback) && (
+              <div className="bg-blue-50/40 text-blue-800 p-4 rounded-lg flex items-center gap-3 border border-blue-100/50 backdrop-blur-sm">
+                <Sparkles className="w-5 h-5 shrink-0 text-blue-500" />
+                <p className="text-sm font-medium">Showing curated opportunities while we refresh new matches ✨</p>
+              </div>
+            )}
 
             {/* Live Update Pill */}
             {hasNewUpdates && (
@@ -271,8 +272,7 @@ export default function Dashboard({ user, profile }: DashboardProps) {
             )}
 
             {([
-              { title: "New Today", icon: <Sparkles className="w-5 h-5 text-amber-500" />, items: feedItems.filter(i => i.isNew) },
-              { title: "Previously Seen", icon: <Compass className="w-5 h-5 text-gray-400" />, items: feedItems.filter(i => !i.isNew) }
+              { title: "Personalized Feed", icon: <Sparkles className="w-5 h-5 text-amber-500" />, items: feedItems },
             ]).map(group => group.items.length > 0 && (
               <div key={group.title} className="space-y-4">
                 <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -283,20 +283,23 @@ export default function Dashboard({ user, profile }: DashboardProps) {
                   {group.items.map((item, i) => (
                     <div key={i} className="clean-card p-6 flex flex-col justify-between relative group">
                       <button 
-                        onClick={() => setShareOpp({ title: item.title, link: item.applyLink || item.apply_link || window.location.href })}
+                        onClick={() => {
+                          setShareOpp({ title: item.title, link: item.applyLink || item.apply_link || window.location.href });
+                          trackInteraction(item.id, 'save');
+                        }}
                         className="absolute top-4 right-4 text-gray-400 hover:text-blue-600 transition-colors"
                         title="Share"
                       >
                         <Share2 className="w-4 h-4" />
                       </button>
-                      <div>
+                      <div onClick={() => trackInteraction(item.id, 'view')}>
                         <div className="flex justify-between items-start mb-2 pr-6">
                           <span className="text-xs font-semibold px-2 py-1 bg-blue-50 text-blue-700 rounded-md">
                             {item.type || 'Opportunity'}
                           </span>
                           <div className="flex gap-2 items-center">
                             {item.isLive && <span className="text-[10px] uppercase font-bold text-white bg-red-500 px-2 py-0.5 rounded-full animate-pulse">Live</span>}
-                            {(item.matchScore || item.smartMatch || item.smart_match) && <span className="text-xs font-semibold text-green-600">⚡ {item.matchScore ? item.matchScore + '% Match' : 'Smart Match'}</span>}
+                            {(item.matchScore || item.match_score || item.smartMatch || item.smart_match) && <span className="text-xs font-semibold text-green-600">⚡ {item.matchScore || item.match_score ? (item.matchScore || item.match_score) + '% Match' : 'Smart Match'}</span>}
                           </div>
                         </div>
                         <h4 className="font-bold text-gray-900 mb-1">{item.title}</h4>
@@ -318,7 +321,13 @@ export default function Dashboard({ user, profile }: DashboardProps) {
                              <FileText className="w-3.5 h-3.5 hidden sm:block" /> Assist
                            </button>
                            {(item.apply_link || item.applyLink) ? (
-                             <a href={item.apply_link || item.applyLink} target="_blank" rel="noopener noreferrer" className="clean-btn px-4 py-1.5 text-xs font-bold hover:shadow-md transition-shadow">
+                             <a 
+                               href={item.apply_link || item.applyLink} 
+                               target="_blank" 
+                               rel="noopener noreferrer" 
+                               onClick={() => trackInteraction(item.id, 'apply')}
+                               className="clean-btn px-4 py-1.5 text-xs font-bold hover:shadow-md transition-shadow"
+                             >
                                Apply
                              </a>
                            ) : (
@@ -335,14 +344,16 @@ export default function Dashboard({ user, profile }: DashboardProps) {
             <div className="flex justify-center pt-4">
               <button 
                 onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="clean-btn-outline px-8 py-3 flex items-center gap-2 shadow-sm hover:shadow-md transition-shadow"
+                disabled={loadingMore || !hasNextPage}
+                className="clean-btn-outline px-8 py-3 flex items-center gap-2 shadow-sm hover:shadow-md transition-shadow disabled:opacity-50"
               >
                 {loadingMore ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Finding more...
                   </>
+                ) : !hasNextPage ? (
+                  <>No more opportunities</>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />

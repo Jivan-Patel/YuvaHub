@@ -1,72 +1,84 @@
 import time
 import logging
+from services.database import db
 
 class RecommendationEngine:
     """
-    Mock class representing the core feed scoring engine inside the FastAPI Backend.
+    Core feed scoring engine querying real data from MongoDB.
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
     async def get_personalized_feed(self, user_id: str, page: int, limit: int):
         """
-        In production, this would:
-        1. Fetch user interest vectors (tags, interaction history).
-        2. Query MongoDB with Aggregation / Vector Search.
-        3. Sort by 'match_score'.
+        Fetches opportunities from MongoDB.
         """
-        # Simulating DB latency
-        
+        if not db.db:
+            return self._get_mock_response(user_id, page)
+
+        skip = (page - 1) * limit
+        cursor = db.db.opportunities.find({}).sort("created_at", -1).skip(skip).limit(limit)
+        items = []
+        async for doc in cursor:
+            doc['id'] = str(doc.get('_id', ''))
+            if '_id' in doc: del doc['_id']
+            items.append(doc)
+
         return {
-            "num_results": 2,
-            "next_page": page + 1 if page < 5 else None,
-            "items": [
-                {
-                    "id": f"opp_101_user_{user_id}_pg_{page}",
-                    "title": "Backend Engineering Intern",
-                    "organization": "FastAPI Corp",
-                    "type": "internship",
-                    "tags": ["python", "backend"],
-                    "apply_link": "https://example.com/apply"
-                },
-                {
-                    "id": f"opp_102_user_{user_id}_pg_{page}",
-                    "title": "Global AI Hackathon",
-                    "organization": "OpenAI",
-                    "type": "hackathon",
-                    "tags": ["ai", "competition"],
-                    "apply_link": "https://example.com/openai"
-                }
-            ]
+            "num_results": len(items),
+            "next_page": page + 1 if len(items) == limit else None,
+            "items": items
         }
 
     async def get_trending_feed(self, page: int, limit: int):
+        if not db.db:
+            return self._get_mock_trending(page)
+
+        skip = (page - 1) * limit
+        # In real scenario, filter for 'trending' flag or sort by saves
+        cursor = db.db.opportunities.find({}).sort("created_at", -1).skip(skip).limit(limit)
+        items = []
+        async for doc in cursor:
+            doc['id'] = str(doc.get('_id', ''))
+            if '_id' in doc: del doc['_id']
+            items.append(doc)
+
         return {
-            "num_results": 1,
-            "next_page": page + 1 if page < 3 else None,
+            "num_results": len(items),
+            "next_page": page + 1 if len(items) == limit else None,
+            "items": items
+        }
+
+    def _get_mock_response(self, user_id, page):
+        return {
+            "num_results": 2,
+            "next_page": page + 1,
             "items": [
                 {
-                    "id": f"opp_trending_1",
-                    "title": "Most Saved Internship",
-                    "organization": "Google",
-                    "type": "internship",
-                    "tags": ["software engineering"],
-                    "apply_link": "https://careers.google.com"
+                    "id": f"real_data_pending_{page}",
+                    "title": "Awaiting Live Ingestion...",
+                    "organization": "Yuvahub System",
+                    "type": "status",
+                    "tags": ["system", "startup"],
+                    "apply_link": "https://yuvahub.xyz"
                 }
             ]
         }
 
+    def _get_mock_trending(self, page):
+         return self._get_mock_response("trending", page)
+
     def get_fallback_feed(self):
         """
-        Tier 5 Fallback (when DB / Cache are totally down).
+        Tier 5 Fallback.
         """
         return [
             {
                 "id": "fallback_1",
-                "title": "SDE Intern (Fallback)",
-                "organization": "Amazon",
-                "type": "internship",
-                "tags": ["software engineering"],
-                "apply_link": "https://amazon.jobs"
+                "title": "Global Tech Fellowship",
+                "organization": "Yuvahub Network",
+                "type": "fellowship",
+                "tags": ["Remote", "Leadership"],
+                "apply_link": "https://yuvahub.xyz"
             }
         ]

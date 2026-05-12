@@ -9,10 +9,16 @@ rec_engine = RecommendationEngine() # Injected service
 class BaseOpportunity(BaseModel):
     id: str
     title: str
-    organization: str
-    type: str # hackathon, internship
-    tags: List[str]
-    apply_link: str
+    organization: Optional[str] = "Unknown"
+    type: Optional[str] = "opportunity"
+    tags: Optional[List[str]] = []
+    apply_link: Optional[str] = "#"
+    deadline: Optional[str] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+
+    class Config:
+        extra = "allow"
 
 class FeedResponse(BaseModel):
     items: List[BaseOpportunity]

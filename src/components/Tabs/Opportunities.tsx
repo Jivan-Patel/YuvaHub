@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Sparkles, Clock, Zap, CheckCircle, X, Loader2, Copy, Globe, Bookmark, Share2, FileText, Compass } from 'lucide-react';
 import { UserProfile, Opportunity } from '../../types';
-import { refineSearchWithAI, generateApplyAssist, performLiveSearch } from '../../services/geminiService';
+import { searchOpportunities, trackInteraction, refineQueryBackend, generateApplyAssistBackend } from '../../services/apiClient';
 import ShareModal from '../ui/ShareModal';
 import ApplyAssistModal from '../ui/ApplyAssistModal';
 
@@ -47,36 +47,35 @@ export default function Opportunities({ user, profile }: { user: any, profile: U
   const handleLiveSearch = async (queryToSearch: string, filterToUse: string = filter) => {
     if (!queryToSearch.trim()) return;
     
+    // Clear existing results to show loading state
     setIsSearchingLive(true);
     setHasSearched(true);
     
     try {
-      const cacheKey = CACHE_KEY_PREFIX + queryToSearch.toLowerCase().trim() + "_" + filterToUse + "_" + profile?.field + "_" + profile?.year + "_" + discoveryMode;
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Date.now() - parsed.timestamp < CACHE_TTL_MS) {
-          setSearchData(parsed.data);
-          setIsSearchingLive(false);
-          return;
-        }
+      let query = queryToSearch;
+      if (discoveryMode === 'smart') {
+         query = await refineQueryBackend(queryToSearch, profile);
       }
-
-      const results = await performLiveSearch(queryToSearch, { ...profile, discoveryMode }, filterToUse);
       
-      sessionStorage.setItem(cacheKey, JSON.stringify({
-        timestamp: Date.now(),
-        data: results
-      }));
-      
+      const results = await searchOpportunities(query, filterToUse);
       setSearchData(results);
     } catch (e) {
-      console.error(e);
+      console.error("Search failed:", e);
       setSearchData(null);
     } finally {
       setIsSearchingLive(false);
     }
   };
+
+  // Debounced search effect
+  useEffect(() => {
+    if (hasSearched && searchQuery) {
+      const timer = setTimeout(() => {
+        handleLiveSearch(searchQuery, filter);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [searchQuery, filter]);
 
   const handleFilterClick = (f: string) => {
     setFilter(f);
@@ -90,11 +89,12 @@ export default function Opportunities({ user, profile }: { user: any, profile: U
     setAssistLoading(true);
     
     try {
-      const result = await generateApplyAssist({
+      const result = await generateApplyAssistBackend({
         title: opp.title,
         organization: opp.org || opp.organization
       }, profile);
-      setAssistContent(result);
+      const content = typeof result === 'string' ? result : result.content;
+      setAssistContent(content || "Unable to generate draft.");
     } catch (e) {
       console.error(e);
       setAssistContent("Failed to generate application assistant draft. Please try again.");
@@ -228,18 +228,18 @@ export default function Opportunities({ user, profile }: { user: any, profile: U
         {isSearchingLive ? (
           <div className="py-24 flex flex-col items-center justify-center space-y-4 clean-card">
              <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-             <p className="font-semibold text-gray-600">Finding opportunities matched to your profile...</p>
+             <p className="font-semibold text-gray-600">Discovering more opportunities for you 🚀</p>
           </div>
         ) : hasSearched && (!searchData || !searchData.results || searchData.results.length === 0) ? (
           <div className="py-20 text-center clean-card border-dashed">
-             <p className="text-gray-500 font-medium">No live results found. Try a broader search.</p>
+             <p className="text-gray-500 font-medium">Looking for something specific? We're updating our results constantly.</p>
           </div>
         ) : searchData?.results && (
           <div className="space-y-6">
             {searchData.isFallback && (
-              <div className="bg-amber-50 text-amber-800 p-4 rounded-lg flex items-center gap-3 border border-amber-200">
-                <Zap className="w-5 h-5 shrink-0 text-amber-500" />
-                <p className="text-sm font-medium">Search limit reached for live discovery. Showing pre-curated fallback opportunities for now.</p>
+              <div className="bg-blue-50/40 text-blue-800 p-4 rounded-lg flex items-center gap-3 border border-blue-100/50 backdrop-blur-sm">
+                <Sparkles className="w-5 h-5 shrink-0 text-blue-500" />
+                <p className="text-sm font-medium">Showing curated opportunities while we refresh new matches ✨</p>
               </div>
             )}
             <div className="bg-blue-50 text-blue-800 p-4 rounded-lg flex items-start gap-3 border border-blue-100">
@@ -266,18 +266,24 @@ export default function Opportunities({ user, profile }: { user: any, profile: U
                 <div key={idx} className="clean-card p-6 flex flex-col hover:shadow-lg transition-shadow relative group">
                    <div className="absolute top-6 right-6 flex items-center gap-2">
                      <button 
-                       onClick={() => setShareOpp({ title: opp.title, link: opp.apply_link || opp.applyLink || window.location.href })}
+                       onClick={() => {
+                         setShareOpp({ title: opp.title, link: opp.apply_link || opp.applyLink || window.location.href });
+                         trackInteraction(opp.id, 'save');
+                       }}
                        className="text-gray-300 hover:text-blue-600 transition-colors"
                        title="Share"
                      >
                        <Share2 className="w-5 h-5" />
                      </button>
-                     <button className="text-gray-300 hover:text-blue-600 transition-colors" title="Bookmark">
+                     <button 
+                       onClick={() => trackInteraction(opp.id, 'save')}
+                       className="text-gray-300 hover:text-blue-600 transition-colors" title="Bookmark"
+                     >
                        <Bookmark className="w-5 h-5" />
                      </button>
                    </div>
                    
-                   <div className="flex gap-4 mb-4">
+                   <div className="flex gap-4 mb-4" onClick={() => trackInteraction(opp.id, 'view')}>
                      <div className="w-12 h-12 rounded bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-blue-800 font-bold text-lg shrink-0 border border-blue-200">
                        {opp.org ? opp.org.substring(0,2).toUpperCase() : (opp.organization ? opp.organization.substring(0,2).toUpperCase() : 'OP')}
                      </div>
@@ -330,7 +336,13 @@ export default function Opportunities({ user, profile }: { user: any, profile: U
                          <FileText className="w-3.5 h-3.5" /> Apply Assist
                        </button>
                        {(opp.apply_link || opp.applyLink) && (
-                         <a href={opp.apply_link || opp.applyLink} target="_blank" rel="noopener noreferrer" className="clean-btn px-4 py-1.5 text-xs font-bold hover:shadow-md transition-shadow">
+                         <a 
+                           href={opp.apply_link || opp.applyLink} 
+                           target="_blank" 
+                           rel="noopener noreferrer" 
+                           onClick={() => trackInteraction(opp.id, 'apply')}
+                           className="clean-btn px-4 py-1.5 text-xs font-bold hover:shadow-md transition-shadow"
+                         >
                            Apply Now
                          </a>
                        )}

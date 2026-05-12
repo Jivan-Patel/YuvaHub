@@ -4,6 +4,7 @@ import { auth, signInWithGoogle, logout, db } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { UserProfile } from './types';
+import { fetchSystemStats } from './services/apiClient';
 
 // Tab Components
 import Dashboard from './components/Tabs/Dashboard';
@@ -22,6 +23,21 @@ function App() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [backendReady, setBackendReady] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState(new Date().toLocaleTimeString());
+
+  useEffect(() => {
+    const checkBackend = async () => {
+      const stats = await fetchSystemStats();
+      if (stats) {
+        setBackendReady(true);
+        setLastSyncedTime(new Date().toLocaleTimeString());
+      }
+    };
+    checkBackend();
+    const interval = setInterval(checkBackend, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -192,9 +208,9 @@ function App() {
         
         {/* Live Feed Strip Footer */}
         <div className="absolute bottom-0 left-0 right-0 bg-gray-900 text-gray-400 text-xs py-2 px-6 flex items-center justify-center gap-2 border-t border-gray-800 z-20">
-          <span className="text-green-400 animate-pulse">●</span> 
-          <span className="font-medium">Live</span>
-          <span className="hidden sm:inline">· Last synced: {new Date().toLocaleTimeString()}</span>
+          <span className={`${backendReady ? 'text-green-400' : 'text-red-400'} animate-pulse`}>●</span> 
+          <span className="font-medium">{backendReady ? 'Live' : 'Offline'}</span>
+          <span className="hidden sm:inline">· Last synced: {lastSyncedTime}</span>
           <span>· 842 opportunities indexed</span>
           <span className="hidden md:inline">· YuvaHub © 2025</span>
         </div>

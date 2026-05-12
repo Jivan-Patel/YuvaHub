@@ -16,7 +16,7 @@ const AdminDashboard = () => {
   const [logs, setLogs] = useState([]);
   const [isLive, setIsLive] = useState(false);
 
-  const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "https://api.yuvahub.xyz/api/v1";
+  const API_BASE_URL = "/api/v1";
 
   // Fetch initial data
   useEffect(() => {
@@ -151,7 +151,7 @@ const AdminDashboard = () => {
                     <button 
                     onClick={async () => {
                        try {
-                         await fetch(`${API_BASE_URL}/admin/scrapers/trigger`, {
+                         await fetch(`${API_BASE_URL}/trigger-scraper`, {
                            method: 'POST',
                            headers: { 'Content-Type': 'application/json' },
                            body: JSON.stringify({ source_name: s.name })

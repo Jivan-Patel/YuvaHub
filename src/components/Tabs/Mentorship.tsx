@@ -3,7 +3,7 @@ import { Bot, User, Send, Check } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ChatMessage } from '../../types';
-import { chatWithAIMentor } from '../../services/geminiService';
+import { chatWithAIMentorBackend } from '../../services/apiClient';
 
 export default function Mentorship({ user }: { user: any }) {
   const [view, setView] = useState<'ai' | 'human'>('ai');
@@ -61,7 +61,7 @@ function AIMain({ user }: { user: any }) {
 
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }));
-      const response = await chatWithAIMentor(history, text);
+      const response = await chatWithAIMentorBackend(history, text);
       const botMsg: ChatMessage = { id: 'bot-'+Date.now(), role: 'assistant', content: typeof response === 'string' ? response : JSON.stringify(response), timestamp: Date.now() };
       setMessages(prev => [...prev, botMsg]);
     } catch (e) {
