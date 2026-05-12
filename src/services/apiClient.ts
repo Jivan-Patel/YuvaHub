@@ -83,7 +83,6 @@ export async function fetchSmartFeed(profile: any, page: number = 1) {
     const searchParams = new URLSearchParams();
     searchParams.append('page', page.toString());
     
-    // Pass profile context as query params for personalization later if needed
     if (profile?.domain) searchParams.append('domain', profile.domain);
 
     const url = `${API_BASE_URL}/feed?${searchParams.toString()}`;
@@ -96,7 +95,6 @@ export async function fetchSmartFeed(profile: any, page: number = 1) {
 
     const data = await response.json();
     
-    // HYBRID SYSTEM: If DB has < 3 items, supplement with Gemini
     if (!data.items || data.items.length < 3) {
       console.log("DB returned sparse results, triggering Gemini supplemental discovery...");
       try {
@@ -123,7 +121,6 @@ export async function fetchSmartFeed(profile: any, page: number = 1) {
     const cached = getFromCache(cacheKey);
     if (cached) return { ...cached, isFallback: true };
     
-    // Final fallback to pure Gemini if both DB and Cache fail
     try {
         const geminiItems = await geminiService.generateSmartFeed(profile, page);
         return { 
@@ -195,7 +192,6 @@ export async function fetchExploreFeed(page: number = 1, limit: number = 20) {
 
     const data = await response.json();
     
-    // HYBRID SYSTEM
     if (!data.items || data.items.length < 3) {
       console.log("DB returned sparse explore results, triggering Gemini supplemental discovery...");
       try {

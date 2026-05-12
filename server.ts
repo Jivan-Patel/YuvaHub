@@ -39,11 +39,13 @@ async function startServer() {
     try {
       const page = parseInt((req.query.page as string) || "1", 10);
       const limit = parseInt((req.query.limit as string) || "10", 10);
+      
       if (!db) {
         return res.json({ num_results: 1, next_page: null, items: [{
           id: "sys_nodeDbMissing", title: "Awaiting Live Ingestion...", organization: "Yuvahub System", type: "status", tags: ["system"], apply_link: "#"
         }]});
       }
+
       const skip = (page - 1) * limit;
       const cursor = db.collection("opportunities").find({}).sort({ created_at: -1 }).skip(skip).limit(limit);
       const items = await cursor.toArray();
@@ -52,6 +54,7 @@ async function startServer() {
         delete d._id;
         return d;
       });
+
       res.json({
         num_results: mapped.length,
         next_page: mapped.length === limit ? page + 1 : null,
@@ -68,6 +71,7 @@ async function startServer() {
       if (!db) {
         return res.json({ num_results: 0, next_page: null, items: [] });
       }
+
       const cursor = db.collection("opportunities").find({}).sort({ created_at: -1 }).limit(5);
       const items = await cursor.toArray();
       const mapped = items.map((doc: any) => {
@@ -75,6 +79,7 @@ async function startServer() {
         delete d._id;
         return d;
       });
+
       res.json({
         num_results: mapped.length,
         next_page: null,
@@ -106,7 +111,7 @@ async function startServer() {
       if (!db) return res.json({ results: [], meta: { total_found: 0 } });
       const filter: any = {};
       if (q) filter.title = { $regex: q, $options: "i" };
-      if (type && type !== "All") filter.type = type.replace(/s$/, ""); // very basic mapping
+      if (type && type !== "All") filter.type = type.replace(/s$/, ""); 
       
       const cursor = db.collection("opportunities").find(filter).limit(20);
       const items = await cursor.toArray();
@@ -195,14 +200,14 @@ async function startServer() {
 
   app.get("/api/v1/admin/scrapers", async (req, res) => {
     let devpostCount = 0;
-    let devfolioCount = 0;
+    let unstopCount = 0;
     if (db) {
       devpostCount = await db.collection("opportunities").countDocuments({ source: "devpost" });
-      devfolioCount = await db.collection("opportunities").countDocuments({ source: "devfolio" });
+      unstopCount = await db.collection("opportunities").countDocuments({ source: "unstop" });
     }
     res.json([
       { name: "Devpost", status: "healthy", lastRun: 1, items: devpostCount, failures: 0, proxyHealth: "green" },
-      { name: "Devfolio", status: "healthy", lastRun: 1, items: devfolioCount, failures: 0, proxyHealth: "green" }
+      { name: "Unstop", status: "healthy", lastRun: 1, items: unstopCount, failures: 0, proxyHealth: "green" }
     ]);
   });
 
