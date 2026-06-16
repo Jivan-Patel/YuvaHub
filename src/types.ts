@@ -32,6 +32,8 @@ export interface UserProfile {
   portfolioUrl?: string;
   bio?: string;
   avatarUrl?: string;
+  onboarded?: boolean;
+  bookmarks?: string[];
 }
 
 export interface MentorApplication {

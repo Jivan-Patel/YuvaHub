@@ -1,21 +1,43 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, MapPin, Share2, FileText, ChevronRight, Clock, ExternalLink, Zap, CheckCircle, Award } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, Share2, FileText, ChevronRight, Clock, ExternalLink, Zap, CheckCircle, Award, Bookmark } from 'lucide-react';
 import { SEO } from '../SEO';
 import { fetchOpportunityById, trackInteraction, generateApplyAssistBackend } from '../../services/apiClient';
 import ShareModal from '../ui/ShareModal';
 import ApplyAssistModal from '../ui/ApplyAssistModal';
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 
 interface OpportunityDetailProps {
   id: string;
   onBack: () => void;
   profile: any;
+  setProfile?: (p: any) => void;
 }
 
-export default function OpportunityDetail({ id, onBack, profile }: OpportunityDetailProps) {
+export default function OpportunityDetail({ id, onBack, profile, setProfile }: OpportunityDetailProps) {
   const [opp, setOpp] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shareOpp, setShareOpp] = useState<{title: string, link: string} | null>(null);
+  
+  const isBookmarked = profile?.bookmarks?.includes(id);
+
+  const toggleBookmark = async () => {
+    if (!profile?.uid) return;
+    try {
+      const userRef = doc(db, 'users', profile.uid);
+      if (isBookmarked) {
+        await updateDoc(userRef, { bookmarks: arrayRemove(id) });
+        if (setProfile) setProfile({ ...profile, bookmarks: profile.bookmarks.filter((b: string) => b !== id) });
+      } else {
+        await updateDoc(userRef, { bookmarks: arrayUnion(id) });
+        if (setProfile) setProfile({ ...profile, bookmarks: [...(profile.bookmarks || []), id] });
+      }
+      trackInteraction(id, isBookmarked ? 'view' : 'save');
+    } catch (e) {
+      console.error(e);
+    }
+  };
   
   // Apply Assist State
   const [isAssistModalOpen, setIsAssistModalOpen] = useState(false);
@@ -161,12 +183,20 @@ export default function OpportunityDetail({ id, onBack, profile }: OpportunityDe
         >
           <ArrowLeft className="w-4.5 h-4.5" /> Back to opportunities
         </button>
-        <button 
-          onClick={() => setShareOpp({ title: opp.title, link: detailUrl })}
-          className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 py-1.5 px-3 rounded-md transition-colors border border-gray-200"
-        >
-          <Share2 className="w-4 h-4" /> Share URL
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={toggleBookmark}
+            className={`inline-flex items-center gap-1.5 text-xs py-1.5 px-3 rounded-md transition-colors border ${isBookmarked ? 'text-white bg-blue-600 border-blue-600 hover:bg-blue-700' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50 border-gray-200'}`}
+          >
+            <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-current' : ''}`} /> {isBookmarked ? 'Saved' : 'Save'}
+          </button>
+          <button 
+            onClick={() => setShareOpp({ title: opp.title, link: detailUrl })}
+            className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 py-1.5 px-3 rounded-md transition-colors border border-gray-200"
+          >
+            <Share2 className="w-4 h-4" /> Share URL
+          </button>
+        </div>
       </div>
 
       {/* Beautiful Bento / Grid Landing Style Layout */}

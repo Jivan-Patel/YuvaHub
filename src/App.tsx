@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Globe, PlusCircle, Users, User, Menu, X, Github, Linkedin, Instagram, Twitter, Bell, MessageSquare, Settings, Activity } from 'lucide-react';
+import { LayoutDashboard, Globe, PlusCircle, Users, User, Menu, X, Github, Linkedin, Instagram, Twitter, Bell, MessageSquare, Settings, Activity, Bookmark, Sparkles, BrainCircuit } from 'lucide-react';
 import { auth, signInWithGoogle, logout, db } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -13,10 +13,15 @@ import SubmitOpportunity from './components/Tabs/SubmitOpportunity';
 import Mentorship from './components/Tabs/Mentorship';
 import Profile from './components/Tabs/Profile';
 import Community from './components/Tabs/Community';
+import Bookmarks from './components/Tabs/Bookmarks';
 import SettingsTab from './components/Tabs/Settings';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import NotificationDropdown from './components/ui/NotificationDropdown';
 import OpportunityDetail from './components/Tabs/OpportunityDetail';
+import AIAssistant from './components/Tabs/AIAssistant';
+
+import SplashAuth from './components/SplashAuth';
+import OnboardingFlow from './components/OnboardingFlow';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -110,6 +115,8 @@ function App() {
   const TABS = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'opportunities', label: 'Opportunities', icon: Globe },
+    { id: 'bookmarks', label: 'Bookmarks', icon: Bookmark },
+    { id: 'ai_assistant', label: 'AI Assistant', icon: Sparkles },
     { id: 'submit', label: 'Submit Opportunity', icon: PlusCircle },
     { id: 'mentorship', label: 'Mentorship', icon: Users },
     { id: 'community', label: 'Community', icon: MessageSquare },
@@ -122,6 +129,8 @@ function App() {
     switch (activeTab) {
       case 'dashboard': return <Dashboard user={user} profile={profile} onViewDetails={viewOpportunity} />;
       case 'opportunities': return <Opportunities user={user} profile={profile} onViewDetails={viewOpportunity} />;
+      case 'bookmarks': return <Bookmarks user={user} profile={profile} onViewDetails={viewOpportunity} />;
+      case 'ai_assistant': return <AIAssistant user={user} profile={profile} />;
       case 'submit': return <SubmitOpportunity user={user} />;
       case 'mentorship': return <Mentorship user={user} />;
       case 'community': return <Community user={user} profile={profile} />;
@@ -134,6 +143,19 @@ function App() {
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-blue-600 font-bold tracking-widest uppercase">INITIALIZING SYSTEM...</div>;
+  }
+
+  if (!user) {
+    return <SplashAuth />;
+  }
+
+  if (profile && profile.onboarded === false && user.email !== "uditt490@gmail.com") {
+      // Allow admin email to bypass or onboard
+  }
+
+  // Ensure they are onboarded or we show the onboarding flow
+  if (user && profile && !profile.onboarded) {
+    return <OnboardingFlow user={user} profile={profile} onComplete={(updated) => setProfile(updated)} />;
   }
 
   return (
@@ -255,6 +277,7 @@ function App() {
               id={selectedOppId} 
               onBack={clearSelectedOpportunity} 
               profile={profile} 
+              setProfile={setProfile}
             />
           ) : (
             renderContent()

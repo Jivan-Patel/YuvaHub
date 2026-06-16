@@ -143,7 +143,7 @@ export async function fetchSmartFeed(profile: any, page: number = 1) {
 export async function generateApplyAssistBackend(opportunity: any, profile: any) {
   try {
     const content = await geminiService.generateApplyDraft(opportunity, profile);
-    return { content };
+    return { content: content || "Draft could not be generated." };
   } catch (error) {
     return { content: "Our AI is currently optimizing your draft. Please try again in 60s." };
   }
@@ -151,7 +151,8 @@ export async function generateApplyAssistBackend(opportunity: any, profile: any)
 
 export async function refineQueryBackend(query: string, profile: any) {
   try {
-    return await geminiService.refineSearchQuery(query, profile);
+    const result = await geminiService.refineSearchQuery(query, profile);
+    return result || query;
   } catch (error) {
     return query;
   }
@@ -233,12 +234,17 @@ export async function fetchExploreFeed(page: number = 1, limit: number = 20) {
   }
 }
 
-export async function searchOpportunities(query: string, type?: string, page: number = 1) {
+export async function searchOpportunities(query: string, type?: string, page: number = 1, advanced?: {remote?: boolean, location?: string, days?: number, company?: string}) {
   const cacheKey = `search_${query.toLowerCase().replace(/\s+/g, '_')}`;
   try {
     const searchParams = new URLSearchParams();
     searchParams.append('q', query);
     if (type && type !== 'All') searchParams.append('type', type);
+    if (advanced?.remote) searchParams.append('remote', 'true');
+    if (advanced?.location) searchParams.append('location', advanced.location);
+    if (advanced?.days) searchParams.append('days', advanced.days.toString());
+    if (advanced?.company) searchParams.append('q', advanced.company + ' ' + query); // hacky company filter
+    
     searchParams.append('page', page.toString());
     
     const url = `${API_BASE_URL}/search?${searchParams.toString()}`;

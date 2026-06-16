@@ -146,24 +146,6 @@ export default function Dashboard({ user, profile, onViewDetails }: DashboardPro
     }
   };
 
-  if (!user) {
-    return (
-      <div className="max-w-7xl mx-auto space-y-12">
-        <header>
-          <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-gray-900">
-            Welcome to <span className="text-blue-600">YuvaHub</span>.
-          </h2>
-          <p className="text-sm font-medium text-gray-500">Please log in to access your personalized feed and scout protocol.</p>
-        </header>
-        <div className="clean-card p-12 text-center border-dashed border-gray-300">
-          <ShieldCheck className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-2xl font-bold text-gray-900 mb-2">Authentication Required</h3>
-          <p className="text-sm text-gray-500 mb-8 max-w-md mx-auto">You must verify your identity to access the intelligence network.</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-7xl mx-auto space-y-8 relative">
       <header>

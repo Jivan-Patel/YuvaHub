@@ -5,10 +5,23 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import { fileURLToPath } from "url";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import dotenv from "dotenv";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
+
+let _genAI: GoogleGenAI | null = null;
+function getGenAI() {
+  if (!_genAI) {
+    if (!process.env.GEMINI_API_KEY) {
+       console.warn("GEMINI_API_KEY not set. AI features will fallback.");
+       return null;
+    }
+    _genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  }
+  return _genAI;
+}
 
 // Composite Feed Ranking Engine based on relevance, freshness, quality, and engagement clicks
 async function getRankedOpportunities(database: any, profile: any, page: number, limit: number) {
@@ -218,24 +231,99 @@ async function startServer() {
     }
   });
 
+  app.post("/api/v1/ai/generate", async (req, res) => {
+    try {
+      const { prompt } = req.body;
+      if (!prompt) return res.status(400).json({ error: "No prompt" });
+      const ai = getGenAI();
+      if (!ai) return res.json({ text: "AI generation is currently disabled." });
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt
+      });
+      res.json({ text: response.text });
+    } catch (err) {
+      console.error("AI Gen Error:", err);
+      res.status(500).json({ error: "AI Generation failed." });
+    }
+  });
+
+  app.post("/api/v1/ai/resume_review", async (req, res) => {
+    try {
+      const { resume } = req.body;
+      if (!resume) return res.status(400).json({ error: "No resume provided" });
+      const ai = getGenAI();
+      if (!ai) {
+         return res.json({
+            score: 65,
+            strengths: ["Clear formatting"],
+            weaknesses: ["Missing AI Key", "Failed generation"],
+            suggestions: ["Add Gemini Key"]
+         });
+      }
+
+      const prompt = `Review this student resume for structure, impact, and ATS readiness. 
+Resume text: ${resume}
+Return JSON strictly in this format:
+{
+  "score": (number 1-100),
+  "strengths": ["...", "..."],
+  "weaknesses": ["...", "..."],
+  "suggestions": ["...", "..."]
+}`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+      });
+      res.json(JSON.parse(response.text || "{}"));
+    } catch (err) {
+      console.error("Resume Review Error:", err);
+      res.status(500).json({ error: "Resume review failed." });
+    }
+  });
+
   app.get("/api/v1/search", async (req, res) => {
     try {
       const q = (req.query.q as string) || "";
       const type = req.query.type as string;
+      const remote = req.query.remote === 'true';
+      const location = req.query.location as string;
+      const days = parseInt(req.query.days as string);
+      
       if (!db) return res.json({ results: [], meta: { total_found: 0 } });
       const filter: any = {};
       if (q) filter.title = { $regex: q, $options: "i" };
       if (type && type !== "All") filter.type = type.replace(/s$/, ""); 
       
-      const cursor = db.collection("opportunities").find(filter).limit(20);
+      if (remote) {
+        filter.location = { $regex: "remote|online|virtual", $options: "i" };
+      } else if (location) {
+        filter.location = { $regex: location, $options: "i" };
+      }
+      
+      const cursor = db.collection("opportunities").find(filter).limit(50);
       const items = await cursor.toArray();
-      const mapped = items.map((doc: any) => {
+      let mapped = items.map((doc: any) => {
         const d = { ...doc, id: doc._id.toString() };
         delete d._id;
         return d;
       });
+      
+      if (!isNaN(days)) {
+         // rough deadline filter in memory since unstructured
+         mapped = mapped.filter((m: any) => {
+           if (!m.deadline || m.deadline.toLowerCase().includes("rolling")) return true;
+           const match = m.deadline.match(/(\d+)\s+days/i);
+           if (match && parseInt(match[1]) <= days) return true;
+           return false;
+         });
+      }
+      
       res.json({
-        results: mapped,
+        results: mapped.slice(0, 20),
         meta: { query: q, total_found: mapped.length }
       });
     } catch(err) {

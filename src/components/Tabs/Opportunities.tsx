@@ -14,6 +14,10 @@ export default function Opportunities({ user, profile, onViewDetails }: { user: 
   const [hasSearched, setHasSearched] = useState(false);
   const [shareOpp, setShareOpp] = useState<{title: string, link: string} | null>(null);
   const [discoveryMode, setDiscoveryMode] = useState<'smart' | 'explore'>('smart');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState<{remote: boolean; location: string; days: string; company: string}>({
+    remote: false, location: '', days: '', company: ''
+  });
 
   // Apply Assist State
   const [isAssistModalOpen, setIsAssistModalOpen] = useState(false);
@@ -36,12 +40,12 @@ export default function Opportunities({ user, profile, onViewDetails }: { user: 
       if (profile.year) {
         defaultQuery += ` for ${profile.year} year students`;
       }
-      setSearchQuery(defaultQuery);
+      // Do not set searchQuery here so the search bar stays empty.
       handleLiveSearch(defaultQuery, filter);
     }
   }, [profile, hasSearched, filter, strength]);
 
-  const handleLiveSearch = async (queryToSearch: string, filterToUse: string = filter) => {
+  const handleLiveSearch = async (queryToSearch: string, filterToUse: string = filter, advSettings = advancedFilters) => {
     if (!queryToSearch.trim()) return;
     
     // Clear existing results to show loading state
@@ -54,7 +58,12 @@ export default function Opportunities({ user, profile, onViewDetails }: { user: 
          query = await refineQueryBackend(queryToSearch, profile);
       }
       
-      const results = await searchOpportunities(query, filterToUse);
+      const advOpt: any = { remote: advSettings.remote };
+      if (advSettings.location) advOpt.location = advSettings.location;
+      if (advSettings.days) advOpt.days = parseInt(advSettings.days);
+      if (advSettings.company) advOpt.company = advSettings.company;
+
+      const results = await searchOpportunities(query, filterToUse, 1, advOpt);
       setSearchData(results);
     } catch (e) {
       console.error("Search failed:", e);
@@ -68,15 +77,22 @@ export default function Opportunities({ user, profile, onViewDetails }: { user: 
   useEffect(() => {
     if (hasSearched && searchQuery) {
       const timer = setTimeout(() => {
-        handleLiveSearch(searchQuery, filter);
+        handleLiveSearch(searchQuery, filter, advancedFilters);
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [searchQuery, filter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, advancedFilters]);
 
   const handleFilterClick = (f: string) => {
     setFilter(f);
-    handleLiveSearch(searchQuery, f);
+    let queryToRun = searchQuery;
+    if (!queryToRun.trim() && profile) {
+      queryToRun = "Student opportunities";
+      if (profile.field) queryToRun = `${profile.field} opportunities`;
+      if (profile.year) queryToRun += ` for ${profile.year} year students`;
+    }
+    handleLiveSearch(queryToRun, f, advancedFilters);
   };
 
   const handleApplyAssist = async (opp: any) => {
@@ -102,7 +118,13 @@ export default function Opportunities({ user, profile, onViewDetails }: { user: 
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      handleLiveSearch(searchQuery);
+      let queryToRun = searchQuery;
+      if (!queryToRun.trim() && profile) {
+        queryToRun = "Student opportunities";
+        if (profile.field) queryToRun = `${profile.field} opportunities`;
+        if (profile.year) queryToRun += ` for ${profile.year} year students`;
+      }
+      handleLiveSearch(queryToRun);
     }
   };
 
@@ -119,24 +141,6 @@ export default function Opportunities({ user, profile, onViewDetails }: { user: 
     }
     return 'text-gray-600'; // Default
   };
-
-  if (!user) {
-    return (
-      <div className="max-w-7xl mx-auto space-y-12">
-        <header>
-          <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-gray-900">
-            Opportunities <span className="text-blue-600">Network</span>
-          </h2>
-          <p className="text-sm font-medium text-gray-500">Please log in to access the live opportunity feed.</p>
-        </header>
-        <div className="clean-card p-12 text-center border-dashed border-gray-300">
-          <Globe className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-2xl font-bold text-gray-900 mb-2">Authentication Required</h3>
-          <p className="text-sm text-gray-500 mb-8 max-w-md mx-auto">Access restricted. Verify identity to see matching opportunities.</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 relative">
@@ -164,16 +168,73 @@ export default function Opportunities({ user, profile, onViewDetails }: { user: 
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-gray-500 flex items-center gap-1">
-            <Zap className="w-4 h-4" /> Zap shortcuts:
-          </span>
-          {QUICK_ZAPS.map(z => (
-            <button key={z} onClick={() => { setSearchQuery(z); handleLiveSearch(z); }} className="px-3 py-1 bg-white border border-gray-200 hover:border-blue-400 text-sm text-gray-700 rounded-md transition-colors shadow-sm cursor-pointer">
-              {z}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-gray-500 flex items-center gap-1">
+              <Zap className="w-4 h-4" /> Zap shortcuts:
+            </span>
+            {QUICK_ZAPS.map(z => (
+              <button key={z} onClick={() => { setSearchQuery(z); handleLiveSearch(z); }} className="px-3 py-1 bg-white border border-gray-200 hover:border-blue-400 text-sm text-gray-700 rounded-md transition-colors shadow-sm cursor-pointer">
+                {z}
+              </button>
+            ))}
+          </div>
+          <button 
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1 border border-blue-200 bg-blue-50 px-3 py-1.5 rounded-md"
+          >
+            {showAdvancedFilters ? 'Hide Advanced Filters' : 'Advanced Filters'}
+          </button>
         </div>
+
+        {showAdvancedFilters && (
+          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl grid grid-cols-1 md:grid-cols-4 gap-4 animate-fade-in">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Location</label>
+              <input 
+                type="text" 
+                placeholder="e.g. India, US, London" 
+                className="clean-input w-full text-sm py-2 px-3"
+                value={advancedFilters.location}
+                onChange={e => setAdvancedFilters({...advancedFilters, location: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Company / Org</label>
+              <input 
+                type="text" 
+                placeholder="e.g. Google, Microsoft" 
+                className="clean-input w-full text-sm py-2 px-3"
+                value={advancedFilters.company}
+                onChange={e => setAdvancedFilters({...advancedFilters, company: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Max Deadline (Days)</label>
+              <select 
+                className="clean-input w-full text-sm py-2 px-3"
+                value={advancedFilters.days}
+                onChange={e => setAdvancedFilters({...advancedFilters, days: e.target.value})}
+              >
+                <option value="">Any Time</option>
+                <option value="7">Next 7 days</option>
+                <option value="15">Next 15 days</option>
+                <option value="30">Next 30 days</option>
+              </select>
+            </div>
+            <div className="flex items-end pb-2">
+              <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
+                <input 
+                  type="checkbox" 
+                  checked={advancedFilters.remote}
+                  onChange={e => setAdvancedFilters({...advancedFilters, remote: e.target.checked})}
+                  className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                />
+                Remote / Online Only
+              </label>
+            </div>
+          </div>
+        )}
 
         <div className="relative flex flex-col md:flex-row gap-4 items-center">
           <div className="flex items-center bg-gray-100 p-1 rounded-full relative shrink-0 overflow-hidden">
@@ -209,8 +270,16 @@ export default function Opportunities({ user, profile, onViewDetails }: { user: 
             />
           </div>
           <button 
-            onClick={() => handleLiveSearch(searchQuery)}
-            disabled={!searchQuery || isSearchingLive}
+            onClick={() => {
+              let queryToRun = searchQuery;
+              if (!queryToRun.trim() && profile) {
+                queryToRun = "Student opportunities";
+                if (profile.field) queryToRun = `${profile.field} opportunities`;
+                if (profile.year) queryToRun += ` for ${profile.year} year students`;
+              }
+              handleLiveSearch(queryToRun);
+            }}
+            disabled={isSearchingLive}
             className="clean-btn w-full md:w-auto px-6 py-3 shrink-0 flex justify-center shadow-md"
           >
              Search
