@@ -5,6 +5,7 @@
 
 import { auth } from '../lib/firebase';
 import * as geminiService from './gemini';
+import { getFilteredFallbacks } from './staticFallbacks';
 
 const API_BASE_URL = "/api/v1";
 
@@ -101,20 +102,37 @@ export async function fetchSmartFeed(profile: any, page: number = 1) {
 
     const data = await response.json();
     
-    if (!data.items || data.items.length < 3) {
-      console.log("DB returned sparse results, triggering Gemini supplemental discovery...");
+    const hasMissingDbMarker = data.items && data.items.some((i: any) => i.id === "sys_nodeDbMissing");
+    
+    if (!data.items || data.items.length < 3 || hasMissingDbMarker) {
+      console.log("DB returned sparse results or missing database, triggering Gemini supplemental discovery...");
+      let geminiSuccess = false;
       try {
         const geminiItems = await geminiService.generateSmartFeed(profile, page);
         if (geminiItems && geminiItems.length > 0) {
+          // Filter out missing DB placeholder first
+          const cleanDbItems = (data.items || []).filter((item: any) => item.id !== "sys_nodeDbMissing");
           data.items = [
-            ...(data.items || []),
+            ...cleanDbItems,
             ...geminiItems.map((item: any) => ({ ...item, isAI_Supplement: true }))
           ];
           data.meta = { ...data.meta, note: "Supplemented with AI-discovered opportunities" };
           data.next_page = page + 1; // force next page if we injected items
+          geminiSuccess = true;
         }
       } catch (geminiError) {
-        console.warn("Gemini supplement failed", geminiError);
+        console.warn("Gemini supplement failed, resolving to local static fallbacks", geminiError);
+      }
+
+      // Statically supplement if Gemini failed or is disabled
+      if (!geminiSuccess || !data.items || data.items.length < 3) {
+        const staticItems = getFilteredFallbacks(profile, 6);
+        const cleanDbItems = (data.items || []).filter((item: any) => item.id !== "sys_nodeDbMissing");
+        data.items = [
+          ...cleanDbItems,
+          ...staticItems.map((item: any) => ({ ...item, isFallback: true }))
+        ];
+        data.next_page = page + 1;
       }
     }
 
@@ -129,14 +147,22 @@ export async function fetchSmartFeed(profile: any, page: number = 1) {
     
     try {
         const geminiItems = await geminiService.generateSmartFeed(profile, page);
-        return { 
-           items: geminiItems.map((i: any) => ({...i, isAI_Supplement: true})), 
-           isFallback: true, 
-           next_page: page + 1 
-        };
+        if (geminiItems && geminiItems.length > 0) {
+          return { 
+             items: geminiItems.map((i: any) => ({...i, isAI_Supplement: true})), 
+             isFallback: true, 
+             next_page: page + 1 
+          };
+        }
     } catch (e) {
-        return { items: [], isFallback: true };
+        console.warn("Gemini recovery failed during complete offline event, resolving to curated local static list", e);
     }
+
+    return { 
+       items: getFilteredFallbacks(profile, 6).map((item: any) => ({ ...item, isFallback: true })), 
+       isFallback: true,
+       next_page: page + 1
+    };
   }
 }
 
@@ -172,9 +198,22 @@ export async function runScoutProtocolBackend(parameters: any, profile: any) {
     
     if (!response.ok) throw new Error("API_ERROR");
     
-    return await response.json();
+    const data = await response.json();
+    if (!data.results || data.results.length === 0) {
+      throw new Error("No database results for scout");
+    }
+    return data;
   } catch (error) {
-    return { results: [], error: "Scout failed" };
+    console.warn("Scout backend failed or returned empty results, falling back to local matches", error);
+    // Dynamic local matching based on scout inputs as safety net
+    const scouted = getFilteredFallbacks({ 
+      skills: parameters.tech || "", 
+      field: parameters.field || "" 
+    }, 5);
+    return { 
+      results: scouted.map((item: any) => ({ ...item, isFallback: true })), 
+      meta: { total_found: scouted.length } 
+    };
   }
 }
 
@@ -199,19 +238,32 @@ export async function fetchExploreFeed(page: number = 1, limit: number = 20) {
 
     const data = await response.json();
     
-    if (!data.items || data.items.length < 3) {
+    const hasMissingDbMarker = data.items && data.items.some((i: any) => i.id === "sys_nodeDbMissing");
+
+    if (!data.items || data.items.length < 3 || hasMissingDbMarker) {
       console.log("DB returned sparse explore results, triggering Gemini supplemental discovery...");
+      let geminiSuccess = false;
       try {
         const geminiItems = await geminiService.generateExploreFeed(page);
         if (geminiItems && geminiItems.length > 0) {
           data.items = [
-            ...(data.items || []),
+            ...(data.items || []).filter((item: any) => item.id !== "sys_nodeDbMissing"),
             ...geminiItems.map((item: any) => ({ ...item, isAI_Supplement: true }))
           ];
           data.next_page = page + 1;
+          geminiSuccess = true;
         }
       } catch (e) {
         console.warn("Gemini explore supplement failed", e);
+      }
+
+      if (!geminiSuccess || !data.items || data.items.length < 3) {
+        const staticItems = getFilteredFallbacks({}, 6);
+        data.items = [
+          ...(data.items || []).filter((item: any) => item.id !== "sys_nodeDbMissing"),
+          ...staticItems.map((item: any) => ({ ...item, isFallback: true }))
+        ];
+        data.next_page = page + 1;
       }
     }
 
@@ -223,14 +275,22 @@ export async function fetchExploreFeed(page: number = 1, limit: number = 20) {
     
     try {
         const geminiItems = await geminiService.generateExploreFeed(page);
-        return { 
-           items: geminiItems.map((i: any) => ({...i, isAI_Supplement: true})), 
-           isFallback: true, 
-           next_page: page + 1 
-        };
+        if (geminiItems && geminiItems.length > 0) {
+          return { 
+             items: geminiItems.map((i: any) => ({...i, isAI_Supplement: true})), 
+             isFallback: true, 
+             next_page: page + 1 
+          };
+        }
     } catch (e) {
-        throw error;
+        console.warn("Explore recovery failed completely during offline event", e);
     }
+
+    return { 
+       items: getFilteredFallbacks({}, 6).map((item: any) => ({ ...item, isFallback: true })), 
+       isFallback: true,
+       next_page: page + 1
+    };
   }
 }
 
