@@ -234,6 +234,121 @@ async function startServer() {
   app.use(cors(corsOptions));
   app.use(express.json());
 
+  // --- DNS-AID Agent Discovery Endpoints ---
+  app.get("/.well-known/agents/:file", (req, res) => {
+    const file = req.params.file;
+    if (file === "index.json") {
+      return res.json({
+        agents: [
+          {
+            name: "YuvaHub Agent",
+            description: "Agent to find hackathons, internships, and scholarships for Indian students."
+          }
+        ]
+      });
+    } else if (file === "a2a.json") {
+      return res.json({ a2a: true });
+    }
+    res.status(404).json({ error: "Not found" });
+  });
+
+  // --- API Catalog Discovery Endpoint ---
+  app.get("/.well-known/api-catalog", (req, res) => {
+    res.set("Content-Type", "application/linkset+json");
+    res.json({
+      linkset: [
+        {
+          anchor: "https://yuvahub.xyz/api/v1/",
+          "service-desc": [
+            {
+              href: "https://yuvahub.xyz/api/openapi.yaml",
+              type: "application/vnd.oai.openapi"
+            }
+          ],
+          "service-doc": [
+            {
+              href: "https://yuvahub.xyz/api/docs",
+              type: "text/html"
+            }
+          ],
+          status: [
+            {
+              href: "https://yuvahub.xyz/api/v1/health",
+              type: "application/json"
+            }
+          ]
+        }
+      ]
+    });
+  });
+
+  // --- OAuth/OIDC Discovery Endpoint ---
+  app.get(["/.well-known/openid-configuration", "/.well-known/oauth-authorization-server"], (req, res) => {
+    res.json({
+      issuer: "https://securetoken.google.com/gen-lang-client-0238861756",
+      authorization_endpoint: "https://gen-lang-client-0238861756.firebaseapp.com/__/auth/handler",
+      token_endpoint: "https://securetoken.googleapis.com/v1/token",
+      jwks_uri: "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
+      response_types_supported: ["id_token", "token"],
+      grant_types_supported: ["implicit", "authorization_code", "refresh_token"],
+      subject_types_supported: ["public"],
+      id_token_signing_alg_values_supported: ["RS256"],
+      agent_auth: {
+        skill: "https://auth.md",
+        register_uri: "https://yuvahub.xyz/agent/auth",
+        identity_types_supported: ["anonymous"],
+        anonymous: {
+          credential_types_supported: ["bearer"]
+        },
+        claim_uri: "https://yuvahub.xyz/agent/claim"
+      }
+    });
+  });
+
+  // --- OAuth Protected Resource Metadata ---
+  app.get("/.well-known/oauth-protected-resource", (req, res) => {
+    res.json({
+      resource: "https://yuvahub.xyz/api/",
+      authorization_servers: [
+        "https://securetoken.google.com/gen-lang-client-0238861756"
+      ],
+      scopes_supported: ["read", "write"],
+      bearer_methods_supported: ["header"]
+    });
+  });
+
+  // --- MCP Server Card Endpoint ---
+  app.get("/.well-known/mcp/server-card.json", (req, res) => {
+    res.json({
+      serverInfo: {
+        name: "YuvaHub MCP Server",
+        version: "1.0.0"
+      },
+      endpoint: "https://yuvahub.xyz/mcp",
+      capabilities: {
+        tools: true,
+        resources: true,
+        prompts: true
+      }
+    });
+  });
+
+  // --- Agent Skills Discovery Endpoint ---
+  app.get("/.well-known/agent-skills/index.json", (req, res) => {
+    res.json({
+      $schema: "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+      skills: [
+        {
+          name: "yuvahub-api-skill",
+          type: "skill-md",
+          description: "Skill to query YuvaHub for opportunities",
+          url: "https://yuvahub.xyz/skills/yuvahub-api/SKILL.md",
+          digest: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    });
+  });
+
   // --- Real API Routes ---
   app.get("/api/v1/opportunities", async (req, res) => {
     try {
@@ -988,6 +1103,52 @@ Return JSON strictly in this format:
     
     xml += '</urlset>';
     res.send(xml);
+  });
+
+  // --- Markdown for Agents Negotiation ---
+  app.use(async (req, res, next) => {
+    if (req.method === "GET" && req.headers.accept && req.headers.accept.includes("text/markdown")) {
+      if (req.path.startsWith("/api/") || req.path.startsWith("/.well-known/")) {
+        return next();
+      }
+
+      const oppMatch = req.path.match(/^\/opportunity\/([^\/]+)/);
+      if (oppMatch && db) {
+        const id = oppMatch[1];
+        try {
+          const { ObjectId } = await import("mongodb");
+          let query;
+          try {
+            query = { _id: new ObjectId(id) };
+          } catch(e) {
+            query = { id: id };
+          }
+          const item = await db.collection("opportunities").findOne(query);
+          if (item) {
+            let md = `# ${item.title}\n\n`;
+            md += `**Organization:** ${item.org || item.organization || 'Unknown'}\n`;
+            md += `**Category:** ${item.category || item.type || 'Opportunity'}\n`;
+            if (item.deadline) {
+              md += `**Deadline:** ${item.deadline}\n`;
+            }
+            md += `\n${item.description || "No description provided."}\n\n`;
+            md += `[Apply Here](${item.applyLink || item.apply_link || ""})`;
+            
+            res.set("Content-Type", "text/markdown");
+            res.set("x-markdown-tokens", "150"); 
+            return res.send(md);
+          }
+        } catch(e) {
+          // Ignore and fallback to generic
+        }
+      }
+      
+      const genericMd = `# YuvaHub\n\nYuvaHub is a discovery platform for hackathons, internships, scholarships, and open source programs tailored for students.\n\nExplore opportunities at https://yuvahub.xyz`;
+      res.set("Content-Type", "text/markdown");
+      res.set("x-markdown-tokens", "25");
+      return res.send(genericMd);
+    }
+    next();
   });
 
   // 3. Dynamic Opportunity Page SEO Meta Interceptor

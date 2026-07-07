@@ -25,3 +25,21 @@ If you still see "Invalid Login" on the new domain:
 - Ensure the **Authorized Domains** list in Firebase includes the exact domain shown in the browser address bar.
 - Clear browser cache or try an Incognito window.
 - Make sure you are using the HTTPS version of your site.
+
+## 5. DNS for AI Discovery (DNS-AID)
+To enable DNS-based agent discovery for YuvaHub, you need to publish DNS-AID well-known entrypoint records. This allows AI agents to discover your services automatically.
+
+1. **Publish SVCB/HTTPS Records:**
+   In your Domain Registrar or DNS provider, add ServiceMode `SVCB` or `HTTPS` records for your domain's agent entrypoints.
+   
+   **Examples:**
+   - Name: `_index._agents.yuvahub.xyz` 
+   - Type: `HTTPS` (or `SVCB`)
+   - Value: `1 . alpn="h3,h2" endpoint="/.well-known/agents/index.json"`
+   
+   - Name: `_a2a._agents.yuvahub.xyz`
+   - Type: `HTTPS` (or `SVCB`)
+   - Value: `1 . alpn="h3,h2" endpoint="/.well-known/agents/a2a.json"`
+
+2. **Enable DNSSEC:**
+   For validating resolvers to return authenticated data, ensure that your public discovery zone is signed with **DNSSEC**. You can enable DNSSEC in your domain registrar's settings (e.g., Cloudflare, Namecheap, Google Domains).

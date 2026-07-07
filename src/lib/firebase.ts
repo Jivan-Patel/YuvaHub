@@ -1,6 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { 
-  getAuth, 
+  initializeAuth,
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
   GoogleAuthProvider, 
   OAuthProvider, 
   signInWithPopup, 
@@ -10,17 +12,16 @@ import {
   sendPasswordResetEmail,
   updateProfile
 } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+export const auth = initializeAuth(app, {
+  persistence: browserLocalPersistence,
+  popupRedirectResolver: browserPopupRedirectResolver
+});
 
-// Use initializeFirestore with experimentalForceLongPolling to bypass potential websocket blocks
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-}, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 import { doc, getDocFromServer } from 'firebase/firestore';
 

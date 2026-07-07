@@ -39,6 +39,45 @@ function App() {
     return oppMatch ? oppMatch[1] : null;
   });
 
+  // WebMCP Integration
+  useEffect(() => {
+    let abortController: AbortController | null = null;
+    if (typeof navigator !== 'undefined' && 'modelContext' in navigator) {
+      const mc = (navigator as any).modelContext;
+      const toolDef = {
+        name: "search_opportunities",
+        description: "Search for opportunities on YuvaHub",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search query" }
+          }
+        },
+        execute: async (args: any) => {
+          setActiveTab('opportunities');
+          if (args && args.query) {
+            setAppSearchQuery(args.query);
+          }
+          return "Search executed. View updated in UI.";
+        }
+      };
+
+      if (typeof mc.provideContext === 'function') {
+        mc.provideContext({ tools: [toolDef] });
+      }
+
+      if (typeof mc.registerTool === 'function') {
+        abortController = new AbortController();
+        mc.registerTool(toolDef, { signal: abortController.signal });
+      }
+    }
+    return () => {
+      if (abortController) {
+        abortController.abort();
+      }
+    };
+  }, []);
+
   // Track popstate changes (back and forward buttons on browsers)
   useEffect(() => {
     const handleLocationChange = () => {
