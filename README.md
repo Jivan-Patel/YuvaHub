@@ -145,10 +145,10 @@ Provide these keys in your `.env` file to fully enable application databases and
 ## Reference Guides
 
 For details on advanced configuration, deploy strategies, and architectural designs, refer to the following:
-* **Product Requirements:** [PRD.md](./PRD.md)
-* **Frontend Vercel Deployment:** [DEPLOYMENT.md](./DEPLOYMENT.md)
-* **Backend Render Deployment & Cron Scraper:** [RENDER_DEPLOYMENT_GUIDE.md](./RENDER_DEPLOYMENT_GUIDE.md)
-* **Domain Name Settings:** [DOMAIN_SETUP.md](./DOMAIN_SETUP.md)
+* **Product Requirements:** [PRD.md](./docs/PRD.md)
+* **Frontend Vercel Deployment:** [DEPLOYMENT.md](./docs/DEPLOYMENT.md)
+* **Backend Render Deployment & Cron Scraper:** [RENDER_DEPLOYMENT_GUIDE.md](./docs/RENDER_DEPLOYMENT_GUIDE.md)
+* **Domain Name Settings:** [DOMAIN_SETUP.md](./docs/DOMAIN_SETUP.md)
 
 ---
 
