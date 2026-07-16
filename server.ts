@@ -484,6 +484,18 @@ class MemoryCollection {
   async insertOne(doc: any) { this.data.push(doc); return { insertedId: "mock_id" }; }
   async countDocuments() { return this.data.length; }
   aggregate() { return { toArray: async () => [] }; }
+  initializeUnorderedBulkOp() {
+    const ops: any[] = [];
+    return {
+      insert: (doc: any) => {
+        ops.push(doc);
+      },
+      execute: async () => {
+        this.data.push(...ops);
+        return { ok: 1, nInserted: ops.length };
+      }
+    };
+  }
 }
 
 class MockDB {
@@ -530,6 +542,91 @@ if (uri) {
   setupDNL(db);
 }
 
+class AnalyticsBuffer {
+  private buffer: any[] = [];
+  private flushInterval: NodeJS.Timeout | null = null;
+  private isFlushing = false;
+
+  constructor(private intervalMs: number = 5000) {
+    this.startInterval();
+  }
+
+  public push(event: any) {
+    if (event) {
+      if (Array.isArray(event)) {
+        this.buffer.push(...event);
+      } else {
+        this.buffer.push(event);
+      }
+    }
+  }
+
+  private startInterval() {
+    this.flushInterval = setInterval(() => {
+      this.flush().catch(err => console.error("[AnalyticsBuffer] Auto-flush error:", err));
+    }, this.intervalMs);
+  }
+
+  public async flush() {
+    if (this.buffer.length === 0 || this.isFlushing) {
+      return;
+    }
+
+    this.isFlushing = true;
+    const batch = [...this.buffer];
+    this.buffer = [];
+
+    try {
+      if (db) {
+        const collection = db.collection("analytics");
+        const bulk = collection.initializeUnorderedBulkOp();
+        for (const doc of batch) {
+          bulk.insert(doc);
+        }
+        await bulk.execute();
+        console.log(`[AnalyticsBuffer] Flushed ${batch.length} events to MongoDB.`);
+      } else {
+        this.buffer.unshift(...batch);
+        console.warn(`[AnalyticsBuffer] DB not ready. Re-queued ${batch.length} events.`);
+      }
+    } catch (err) {
+      console.error("[AnalyticsBuffer] Error flushing batch:", err);
+      this.buffer.unshift(...batch);
+    } finally {
+      this.isFlushing = false;
+    }
+  }
+
+  public stop() {
+    if (this.flushInterval) {
+      clearInterval(this.flushInterval);
+      this.flushInterval = null;
+    }
+  }
+}
+
+const analyticsBuffer = new AnalyticsBuffer(5000);
+
+let isShuttingDown = false;
+const gracefulShutdown = async (signal: string) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[System] Received ${signal}. Starting graceful shutdown...`);
+  try {
+    analyticsBuffer.stop();
+    await analyticsBuffer.flush();
+    console.log("[System] Analytics buffer flushed successfully.");
+  } catch (err) {
+    console.error("[System] Error during graceful shutdown analytics flush:", err);
+  } finally {
+    process.exit(0);
+  }
+};
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGBREAK", () => gracefulShutdown("SIGBREAK"));
+
 async function startServer() {
   const app = express();
   const server = http.createServer(app);
@@ -551,6 +648,16 @@ async function startServer() {
 
   app.use(cors(corsOptions));
   app.use(express.json({ limit: '10mb' }));
+
+  app.post("/api/analytics/track", (req, res) => {
+    analyticsBuffer.push(req.body);
+    res.status(202).json({ status: "Accepted" });
+  });
+
+  app.post("/api/analytics/shutdown", async (req, res) => {
+    res.status(200).json({ status: "Shutting down" });
+    await gracefulShutdown("API_TRIGGER");
+  });
 
   // --- DNS-AID Agent Discovery Endpoints ---
   app.get("/.well-known/agents/:file", (req, res) => {
