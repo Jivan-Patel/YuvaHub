@@ -108,6 +108,10 @@ function App() {
       case 'settings': return <SettingsTab />;
       case 'admin': return <AdminDashboard />;
       case 'security': return <Security />;
+      case 'privacy': return <Privacy />;
+      case 'terms': return <Terms />;
+      case 'cookies': return <Cookies />;
+      case 'guidelines': return <Guidelines />;
       case 'legal': return <Legal />;
       case 'support': return <Support />;
       default: return <Dashboard />;
@@ -324,7 +328,7 @@ function App() {
           <span className="font-medium">{backendReady ? 'Live' : 'Offline'}</span>
           <span className="hidden sm:inline">· Last synced: {lastSyncedTime}</span>
           <span>· Opportunities indexed & verified</span>
-          <span className="hidden md:inline">· YuvaHub © 2026 · <button onClick={() => setActiveTab('legal')} className="hover:underline hover:text-white cursor-pointer font-medium bg-transparent border-none p-0 text-xs text-gray-450 font-medium">Privacy & Terms</button> · <button onClick={() => setActiveTab('security')} className="hover:underline hover:text-white cursor-pointer font-medium bg-transparent border-none p-0 text-xs text-gray-400">Security Center</button></span>
+          <span className="hidden md:inline">· YuvaHub © 2026 · <button onClick={() => setActiveTab('privacy')} className="hover:underline hover:text-white cursor-pointer font-medium bg-transparent border-none p-0 text-xs text-gray-450 font-medium font-semibold">Privacy Policy</button> · <button onClick={() => setActiveTab('terms')} className="hover:underline hover:text-white cursor-pointer font-medium bg-transparent border-none p-0 text-xs text-gray-450 font-medium font-semibold">Terms of Service</button> · <button onClick={() => setActiveTab('cookies')} className="hover:underline hover:text-white cursor-pointer font-medium bg-transparent border-none p-0 text-xs text-gray-450 font-medium">Cookie Policy</button> · <button onClick={() => setActiveTab('guidelines')} className="hover:underline hover:text-white cursor-pointer font-medium bg-transparent border-none p-0 text-xs text-gray-450 font-medium">Guidelines</button> · <button onClick={() => setActiveTab('legal')} className="hover:underline hover:text-white cursor-pointer font-medium bg-transparent border-none p-0 text-xs text-gray-400">Legal Index</button> · <button onClick={() => setActiveTab('security')} className="hover:underline hover:text-white cursor-pointer font-medium bg-transparent border-none p-0 text-xs text-gray-400">Security Center</button></span>
         </div>
       </main>
 
