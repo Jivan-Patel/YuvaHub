@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -86,6 +86,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ─── Theme sync ──────────────────────────────────────────────────────────────
 
   const [gettingStartedStep, setGettingStartedStep] = useState<string | null>(null);
+  const [selectedOppId, setSelectedOppId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const oppMatch = window.location.pathname.match(/^\/opportunity\/([^/]+)/);
+    return oppMatch ? oppMatch[1] : null;
+  });
+  const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -399,6 +405,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSelectedOppId,
       viewOpportunity,
       clearSelectedOpportunity,
+      bookmarkedIds,
+      toggleBookmark,
+      isBookmarked,
       theme,
       toggleTheme,
       gettingStartedStep,

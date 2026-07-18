@@ -623,7 +623,7 @@ async function startServer() {
         const id = parts[2];
         if (id) {
           let opp: any = null;
-          if (db) {
+          if (dbQuery) {
             try {
               let query;
               try {
@@ -631,7 +631,7 @@ async function startServer() {
               } catch(e) {
                 query = { id: id };
               }
-              opp = await db.collection("opportunities").findOne(query);
+              opp = await dbQuery.collection("opportunities").findOne(query);
             } catch (dbErr) {
               console.error("Error retrieving opportunity for SEO:", dbErr);
             }
@@ -852,9 +852,9 @@ Sitemap: ${baseUrl}/sitemap.xml
       });
 
       // Fetch opportunities if DB is ready
-      if (db) {
+      if (dbQuery) {
         try {
-          const items = await db.collection("opportunities")
+          const items = await dbQuery.collection("opportunities")
             .find({})
             .project({ _id: 1, title: 1, created_at: 1 })
             .toArray();

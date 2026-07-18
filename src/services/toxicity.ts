@@ -47,7 +47,7 @@ export async function isToxic(text: string, genAI?: GoogleGenAI | null): Promise
   // 2. Google Gemini fallback if instance is available
   if (genAI) {
     try {
-      const response = await geminiBreaker.fire(genAI, text);
+      const response = (await geminiBreaker.fire(genAI, text)) as any;
       const responseText = (response.text || '').toLowerCase().trim();
       console.log(`[Toxicity Checker] Gemini model response: "${responseText}"`);
       return responseText.includes('toxic');
