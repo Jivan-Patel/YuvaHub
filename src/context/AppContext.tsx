@@ -42,6 +42,8 @@ interface AppContextType {
   // UI theme
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+  gettingStartedStep: string | null;
+  setGettingStartedStep: (step: string | null) => void;
 }
 
 // ─── Context creation ─────────────────────────────────────────────────────────
@@ -90,6 +92,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   // ─── Theme sync ──────────────────────────────────────────────────────────────
+
+  const [gettingStartedStep, setGettingStartedStep] = useState<string | null>(null);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -290,31 +294,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ─── Context value ────────────────────────────────────────────────────────────
 
   return (
-    <AppContext.Provider
-      value={{
-        user,
-        profile,
-        setProfile,
-        loading,
-        activeTab,
-        setActiveTab,
-        isMobileMenuOpen,
-        setIsMobileMenuOpen,
-        selectedOppId,
-        setSelectedOppId,
-        viewOpportunity,
-        clearSelectedOpportunity,
-        bookmarkedIds,
-        toggleBookmark,
-        isBookmarked,
-        appSearchQuery,
-        setAppSearchQuery,
-        backendReady,
-        lastSyncedTime,
-        theme,
-        toggleTheme,
-      }}
-    >
+    <AppContext.Provider value={{
+      activeTab,
+      setActiveTab,
+      isMobileMenuOpen,
+      setIsMobileMenuOpen,
+      user,
+      profile,
+      setProfile,
+      loading,
+      backendReady,
+      lastSyncedTime,
+      appSearchQuery,
+      setAppSearchQuery,
+      selectedOppId,
+      setSelectedOppId,
+      viewOpportunity,
+      clearSelectedOpportunity,
+      theme,
+      toggleTheme,
+      gettingStartedStep,
+      setGettingStartedStep
+    }}>
       {children}
     </AppContext.Provider>
   );
