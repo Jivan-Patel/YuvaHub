@@ -19,10 +19,16 @@ import jwt from "jsonwebtoken";
 import { ScholarshipSchema, AIEvaluationResponseSchema } from "./src/models/scholarshipSchema.js";
 import { isToxic, createToxicityMiddleware } from "./src/services/toxicity.js";
 import { authenticateUser, deleteFirebaseUser } from "./src/middleware/auth.js";
-import rateLimit from "express-rate-limit";
+import rateLimit, { MemoryStore } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import Redis from "ioredis";
+
+declare global {
+  var REDIS_AVAILABLE: boolean;
+}
+global.REDIS_AVAILABLE = false;
 import { v2 as cloudinary } from "cloudinary";
+import multer from "multer";
 import { meiliClient, initializeSearchSync } from "./src/services/searchSync.js";
 import { ExpressAdapter } from '@bull-board/express';
 import { createBullBoard } from '@bull-board/api';
@@ -58,45 +64,62 @@ try {
       console.warn('[Redis] Connection failed or Redis is not running. Bypassing rate limiting (fail-open mode).');
       redisErrorLogged = true;
     }
+    global.REDIS_AVAILABLE = false;
   });
   redisClient.on('connect', () => {
     console.log('[Redis] Connected successfully');
     redisErrorLogged = false;
+    global.REDIS_AVAILABLE = true;
+  });
+  redisClient.on('end', () => {
+    global.REDIS_AVAILABLE = false;
   });
 } catch (e: any) {
   console.error('[Redis] Init error:', e.message);
+  global.REDIS_AVAILABLE = false;
 }
 
 const createFailOpenStore = (prefix: string) => {
-  const store = new RedisStore({
-    sendCommand: (...args: string[]) => {
-      const [command, ...commandArgs] = args;
-      return redisClient.call(command, ...commandArgs) as Promise<any>;
-    },
-    prefix: prefix,
-  });
+  const fallbackStore = new MemoryStore();
+  let store: any;
+  if (redisClient) {
+    store = new RedisStore({
+      sendCommand: (...args: string[]) => {
+        const [command, ...commandArgs] = args;
+        return redisClient.call(command, ...commandArgs) as Promise<any>;
+      },
+      prefix: prefix,
+    });
+  }
 
   return {
-    ...store,
+    ...fallbackStore,
     increment: async (key: string) => {
-      if (!redisClient || redisClient.status !== 'ready') {
-        console.error(`[RateLimit] Redis disconnected. Failing open for key: ${key}`);
-        return { totalHits: 1, resetTime: new Date(Date.now() + 60000) };
+      if (global.REDIS_AVAILABLE && store) {
+        try {
+          return await store.increment(key);
+        } catch (err: any) {
+          console.error(`[RateLimit] Redis error. Failing open for key: ${key}`);
+          global.REDIS_AVAILABLE = false;
+        }
       }
-      try {
-        return await store.increment(key);
-      } catch (err: any) {
-        console.error(`[RateLimit] Redis error. Failing open for key: ${key}`);
-        return { totalHits: 1, resetTime: new Date(Date.now() + 60000) };
-      }
+      return fallbackStore.increment(key);
     },
     decrement: async (key: string) => {
-      if (!redisClient || redisClient.status !== 'ready') return;
-      try { return await store.decrement(key); } catch(e) {}
+      if (global.REDIS_AVAILABLE && store) {
+        try { return await store.decrement(key); } catch(e) { global.REDIS_AVAILABLE = false; }
+      }
+      if (fallbackStore.decrement) {
+        return fallbackStore.decrement(key);
+      }
     },
     resetKey: async (key: string) => {
-      if (!redisClient || redisClient.status !== 'ready') return;
-      try { return await store.resetKey(key); } catch(e) {}
+      if (global.REDIS_AVAILABLE && store) {
+        try { return await store.resetKey(key); } catch(e) { global.REDIS_AVAILABLE = false; }
+      }
+      if (fallbackStore.resetKey) {
+        return fallbackStore.resetKey(key);
+      }
     },
   };
 };
@@ -492,8 +515,8 @@ if (commandUri && queryUri) {
     dbQuery.collection("users").createIndex({ uid: 1 }, { unique: true })
       .then(() => console.log(`[Database] Created unique index on users.uid`))
       .catch((err: any) => console.error(`[Database] Failed to create index on users.uid:`, err));
-    dbCommand.collection("users").createIndex({ firebaseUid: 1 }, { unique: true })
-      .then(() => console.log(`[Database] Created unique index on users.firebaseUid`))
+    dbCommand.collection("users").createIndex({ firebaseUid: 1 }, { unique: true, sparse: true })
+      .then(() => console.log(`[Database] Created unique sparse index on users.firebaseUid`))
       .catch((err: any) => console.error(`[Database] Failed to create unique index:`, err));
   }).catch(err => {
     console.error("[Database] Connection failed, falling back to Mock Data:", err);
@@ -621,12 +644,23 @@ async function startServer() {
   if (redisClient) {
     redisClient.on('ready', () => {
       try {
-        const pubClient = redisClient.duplicate();
-        const subClient = redisClient.duplicate();
+        const pubClient = redisClient.duplicate({ enableOfflineQueue: true });
+        const subClient = redisClient.duplicate({ enableOfflineQueue: true });
+        
+        // Fallback if Redis fails so it doesn't crash the server
+        pubClient.on('error', (err) => {
+          console.warn('[Socket.io Redis Pub] Error:', err.message);
+          global.REDIS_AVAILABLE = false;
+        });
+        subClient.on('error', (err) => {
+          console.warn('[Socket.io Redis Sub] Error:', err.message);
+          global.REDIS_AVAILABLE = false;
+        });
+
         io.adapter(createAdapter(pubClient, subClient));
         console.log('[Socket.io Redis] Adapter attached successfully');
       } catch (e: any) {
-        console.warn('[Socket.io Redis] Failed to attach adapter:', e.message);
+        console.warn('[Socket.io Redis] Failed to attach adapter, falling back to in-memory adapter:', e.message);
       }
     });
   }
@@ -662,6 +696,21 @@ async function startServer() {
   app.post("/api/analytics/shutdown", async (req, res) => {
     res.status(200).json({ status: "Shutting down" });
     await gracefulShutdown("API_TRIGGER");
+  });
+
+  // REST Fallback for Socket Messages
+  app.post("/api/messages", (req, res) => {
+    const { eventName, data } = req.body;
+    if (!eventName) {
+      return res.status(400).json({ error: "eventName is required" });
+    }
+    console.log(`[REST Backup] Received fallback event: ${eventName}`, data);
+    
+    // Broadcast or process the event if the local socket instance is available
+    if (ioInstance) {
+      ioInstance.emit(eventName, data);
+    }
+    return res.status(200).json({ success: true, message: "Processed via REST backup" });
   });
 
   // --- Rate Limiting Middlewares ---
@@ -1731,6 +1780,17 @@ ${urls.join("\n")}
 
       const apiSecret = process.env.CLOUDINARY_API_SECRET || "";
       if (!apiSecret) {
+        if (process.env.NODE_ENV !== "production") {
+          return res.json({
+            signature: "dummy_signature",
+            timestamp,
+            folder,
+            allowed_formats: paramsToSign.allowed_formats,
+            apiKey: "dummy_key",
+            cloudName: "dummy_cloud",
+            isDummy: true
+          });
+        }
         return res.status(500).json({ error: "Cloudinary API Secret not configured." });
       }
 
@@ -1812,6 +1872,36 @@ ${urls.join("\n")}
   app.post("/api/v1/storage/signature", handleSignatureRequest);
   app.post("/api/storage/save", handleSaveUpload);
   app.post("/api/v1/storage/save", handleSaveUpload);
+
+  const localUpload = multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => {
+        const dir = path.join(process.cwd(), "public", "uploads");
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+      },
+      filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname}`);
+      }
+    })
+  });
+
+  const handleLocalUpload = async (req: any, res: any) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const publicUrl = `/uploads/${req.file.filename}`;
+      res.json({
+        secure_url: publicUrl,
+        public_id: req.file.filename,
+        format: path.extname(req.file.filename).replace('.', '')
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to handle local upload" });
+    }
+  };
+
+  app.post("/api/storage/upload-local", localUpload.single("file"), handleLocalUpload);
+  app.post("/api/v1/storage/upload-local", localUpload.single("file"), handleLocalUpload);
 
   app.post("/api/v1/interactions/track", async (req, res) => {
     try {
