@@ -1562,6 +1562,49 @@ ${urls.join("\n")}
     }
   });
 
+  // Submit an opportunity
+  app.post("/api/v1/opportunities", async (req, res) => {
+    try {
+      const user = await getAuthenticatedUser(req);
+      if (!dbCommand) return res.status(503).json({ error: "Database not available" });
+
+      const payload = req.body;
+      const { randomUUID } = await import("crypto");
+      
+      const doc = {
+        title: payload.title,
+        description: payload.description,
+        source: payload.organization,
+        source_name: payload.organization,
+        source_url: payload.link,
+        apply_link: payload.link,
+        image_url: 'https://yuvahub.xyz/og-image.jpg',
+        tags: payload.tags || [],
+        category: payload.type,
+        deadline: payload.deadline,
+        location: payload.eligibility?.location,
+        opportunity_type: payload.type,
+        dedupe_hash: payload.link ? payload.link : randomUUID(),
+        created_at: new Date(),
+        updated_at: new Date(),
+        embedding: null as number[] | null,
+        status: 'pending_review',
+        submitterUid: user.uid,
+        contactEmail: payload.contactEmail
+      };
+
+      const embeddingText = `${doc.title} ${doc.source_name} ${doc.description} ${doc.opportunity_type}`;
+      doc.embedding = await generateOpportunityEmbedding(embeddingText);
+
+      await dbCommand.collection('opportunities').insertOne(doc);
+
+      res.status(201).json({ success: true });
+    } catch (err: any) {
+      console.error("[Submit Opportunity API Error]", err);
+      res.status(err.message?.startsWith("Unauthorized") ? 401 : 500).json({ error: err.message || "Internal Server Error" });
+    }
+  });
+
   // Add a bookmark
   app.post("/api/v1/bookmarks", async (req, res) => {
     try {

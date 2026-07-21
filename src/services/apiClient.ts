@@ -567,3 +567,24 @@ export async function fetchOpportunityById(id: string) {
     return null;
   }
 }
+
+export async function submitOpportunity(payload: any) {
+  try {
+    const url = `${API_BASE_URL}/opportunities`;
+    const response = await fetchWithRetry(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Failed to submit opportunity");
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("submitOpportunity error:", error);
+    throw error;
+  }
+}
