@@ -447,6 +447,7 @@ export default function SplashAuth() {
             </div>
             
             <div className="space-y-4">
+              {/* Google Auth Provider Button */}
               <button 
                 onClick={handleGoogleLogin} 
                 disabled={loading !== null} 
@@ -456,6 +457,7 @@ export default function SplashAuth() {
                 <span>{loading === 'google' ? 'Connecting...' : 'Continue with Google'}</span>
               </button>
 
+              {/* GitHub Auth Provider Button */}
               <button 
                 onClick={handleGithubLogin} 
                 disabled={loading !== null} 
