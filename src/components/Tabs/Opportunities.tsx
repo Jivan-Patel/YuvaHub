@@ -127,6 +127,37 @@ export default function Opportunities() {
     return results;
   }, [searchData, sortBy]);
 
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return parseInt(params.get('page') || '1', 10) || 1;
+    }
+    return 1;
+  });
+  const itemsPerPage = 10;
+  
+  useEffect(() => {
+    setCurrentPage(1);
+    if (typeof window !== 'undefined') {
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('page');
+      window.history.replaceState({}, '', newUrl.toString());
+    }
+  }, [qVal, filters, sortBy]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    if (typeof window !== 'undefined') {
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set('page', page.toString());
+      window.history.pushState({}, '', newUrl.toString());
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const totalPages = Math.ceil(filteredResults.length / itemsPerPage);
+  const paginatedResults = filteredResults.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   const getThumbStyle = (type: string) => {
     const t = (type || '').toLowerCase();
     if (t.includes('hackathon')) return 'bg-gradient-to-br from-[#0F172A] to-[#1E3A8A] text-white';
@@ -363,7 +394,7 @@ export default function Opportunities() {
           emptyDescription="Try changing your search or filters, then search again."
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-[16px]">
-            {filteredResults.map((opp: any, i: number) => (
+            {paginatedResults.map((opp: any, i: number) => (
               <OpportunityCard
                 key={opp.id || i}
                 opportunity={opp}
@@ -376,13 +407,31 @@ export default function Opportunities() {
         </AsyncState>
 
         {/* Pagination */}
-        {!loading && filteredResults?.length > 0 && (
+        {!loading && totalPages > 1 && (
           <div className="flex items-center justify-center gap-[6px] mt-10">
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-white border border-[#E2E8F0] flex items-center justify-center text-[#64748B] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors">‹</button>
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-[#2563EB] text-white font-medium flex items-center justify-center">1</button>
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-white border border-[#E2E8F0] flex items-center justify-center text-gray-700 hover:border-[#2563EB] hover:text-[#2563EB] transition-colors">2</button>
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-white border border-[#E2E8F0] flex items-center justify-center text-[#64748B]">...</button>
-            <button className="w-[36px] h-[36px] rounded-[8px] bg-white border border-[#E2E8F0] flex items-center justify-center text-[#64748B] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors">›</button>
+            <button 
+              onClick={() => handlePageChange(Math.max(currentPage - 1, 1))}
+              disabled={currentPage === 1}
+              className="w-[36px] h-[36px] rounded-[8px] bg-white border border-[#E2E8F0] flex items-center justify-center text-[#64748B] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">‹</button>
+            
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+              <button 
+                key={page}
+                onClick={() => handlePageChange(page)}
+                className={`w-[36px] h-[36px] rounded-[8px] font-medium flex items-center justify-center transition-colors ${
+                  currentPage === page 
+                    ? 'bg-[#2563EB] text-white' 
+                    : 'bg-white border border-[#E2E8F0] text-gray-700 hover:border-[#2563EB] hover:text-[#2563EB]'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+
+            <button 
+              onClick={() => handlePageChange(Math.min(currentPage + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="w-[36px] h-[36px] rounded-[8px] bg-white border border-[#E2E8F0] flex items-center justify-center text-[#64748B] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">›</button>
           </div>
         )}
       </main>
