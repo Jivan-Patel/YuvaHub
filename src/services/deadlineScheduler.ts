@@ -2,7 +2,7 @@ import { ObjectId } from "mongodb";
 import { enqueueEmail } from "../queues/emailQueue";
 import { enqueuePushNotification } from "../queues/pushQueue";
 import { Notification } from "../models/notificationSchema";
-import { getSocketIO } from "../../server";
+import { getSocketIO } from "../api/socketInstance.js";
 import { generateDeadlineReminderHtml, generateWeeklyDigestHtml } from "../workers/emailTemplates";
 
 export async function runDeadlineChecks(db: any): Promise<void> {

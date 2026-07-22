@@ -3,7 +3,7 @@ dotenv.config();
 import { spawn } from 'child_process';
 import fetch from 'node-fetch';
 
-const PORT = 4006;
+const PORT = Math.floor(Math.random() * 10000) + 10000;
 
 import { describe, it, expect } from 'vitest';
 
@@ -15,6 +15,7 @@ describe('test-bookmarks.ts', () => {
   console.log('=====================================================');
 
   // Start the server in mock mode (no MONGODB_URI)
+
   console.log(`[Test] Starting server.ts on port ${PORT} in Mock mode...`);
   const serverProcess = spawn('npx', ['tsx', 'server.ts'], {
     shell: true,
@@ -23,7 +24,9 @@ describe('test-bookmarks.ts', () => {
       PORT: PORT.toString(),
       MONGODB_URI: '', // Force MockDB mode
       MONGODB_COMMAND_URI: '',
-      MONGODB_QUERY_URI: ''
+      MONGODB_QUERY_URI: '',
+      ENABLE_MOCK_AUTH: 'true',
+      NODE_ENV: 'development'
     },
     stdio: 'pipe',
   });
@@ -180,7 +183,11 @@ describe('test-bookmarks.ts', () => {
     throw new Error("Test failed");
   } finally {
     console.log(`[Test] Cleaning up and shutting down server...`);
-    serverProcess.kill('SIGKILL');
+    if (process.platform === 'win32' && serverProcess.pid) {
+      spawn('taskkill', ['/pid', serverProcess.pid.toString(), '/f', '/t']);
+    } else {
+      serverProcess.kill('SIGKILL');
+    }
   }
     } catch (e: any) {
       console.warn("Test failed (likely due to missing env/db):", e.message);

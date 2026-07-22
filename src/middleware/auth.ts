@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { dbCommand } from '../api/db.js';
 
 let isFirebaseInitialized = false;
 
@@ -164,3 +165,6 @@ export const authorizeRoles = (allowedRoles: string[]) => {
     next();
   };
 };
+
+export const authMiddleware = authenticateUser(dbCommand);
+export const adminOnly = authorizeRoles(['admin', 'superadmin']);
