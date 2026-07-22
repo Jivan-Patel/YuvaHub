@@ -12,8 +12,14 @@ import { dbCommand } from "./src/api/db.js";
 
 // Import Main API Router
 import apiRoutes from "./src/api/routes/index.js";
+import * as Sentry from "@sentry/node";
 
 dotenv.config();
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN_NODE,
+  tracesSampleRate: 1.0,
+});
 
 const app = express();
 const server = http.createServer(app);
