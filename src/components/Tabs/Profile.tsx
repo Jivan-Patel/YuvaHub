@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Calendar, ExternalLink, RefreshCw } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
+import { updateProfile } from 'firebase/auth';
 import { UserProfile } from '../../types';
 import { ErrorState } from '../ui/states';
 import { useAppContext } from '../../context/AppContext';
@@ -130,6 +131,17 @@ export default function Profile() {
         }
       }
 
+      // Cache buster ensures UI visually updates even if Cloudinary URL is same
+      const finalUrl = uploadData.secure_url + (uploadData.secure_url.includes('?') ? '&' : '?') + 't=' + Date.now();
+
+      if (type === 'avatar' && user) {
+        try {
+          await updateProfile(user, { photoURL: finalUrl });
+        } catch (e) {
+          console.warn("Failed to update Firebase Auth user profile", e);
+        }
+      }
+
       // Step 3: Save metadata to MongoDB
       const saveRes = await fetch('/api/storage/save', {
         method: 'POST',
@@ -139,7 +151,7 @@ export default function Profile() {
         },
         body: JSON.stringify({
           type,
-          url: uploadData.secure_url,
+          url: finalUrl,
           publicId: uploadData.public_id
         })
       });
