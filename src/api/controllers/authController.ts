@@ -2,12 +2,13 @@ import { Request, Response } from "express";
 import path from "path";
 import fs from "fs";
 import { dbCommand, dbQuery } from "../db.js";
+import { sendUnauthorized, sendBadRequest, sendError, sendSuccess, sendServiceUnavailable } from "../../lib/apiResponse.js";
 
 export const authSync = async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (typeof authHeader !== 'string' || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Unauthorized: Missing token" });
+      return sendUnauthorized(res, "Missing token");
     }
 
     const idToken = authHeader.substring(7);
@@ -44,11 +45,11 @@ export const authSync = async (req: Request, res: Response) => {
           avatarUrl = payload.picture || "";
         }
       } catch (e) {
-        return res.status(401).json({ error: "Unauthorized: Invalid mock token format" });
+        return sendBadRequest(res, "Invalid mock token format");
       }
 
       if (!uid) {
-        return res.status(401).json({ error: "Unauthorized: Mock validation failed" });
+        return sendUnauthorized(res, "Mock validation failed");
       }
     } else if (firebaseApiKey) {
       // 2. Validate Firebase ID Token using Google Identity Toolkit API
@@ -62,12 +63,12 @@ export const authSync = async (req: Request, res: Response) => {
       if (!verifyRes.ok) {
         const errData = await verifyRes.json().catch(() => ({}));
         console.error("[Auth] Firebase token verification failed:", errData);
-        return res.status(401).json({ error: "Unauthorized: Invalid token" });
+        return sendUnauthorized(res, "Invalid token");
       }
 
       const data = await verifyRes.json();
       if (!data.users || data.users.length === 0) {
-        return res.status(401).json({ error: "Unauthorized: User not found in token payload" });
+        return sendUnauthorized(res, "User not found in token payload");
       }
 
       const firebaseUser = data.users[0];
@@ -76,7 +77,7 @@ export const authSync = async (req: Request, res: Response) => {
       name = firebaseUser.displayName || "";
       avatarUrl = firebaseUser.photoUrl || "";
     } else {
-      return res.status(401).json({ error: "Authentication service not configured" });
+      return sendServiceUnavailable(res, "Authentication service not configured");
     }
 
     // 3. Sync profile with MongoDB
@@ -166,6 +167,6 @@ export const authSync = async (req: Request, res: Response) => {
 
   } catch (err: any) {
     console.error("[Auth] Error syncing user:", err);
-    res.status(500).json({ error: "Internal Server Error during auth sync" });
+    sendError(res, "Internal Server Error during auth sync", 500);
   }
 };
