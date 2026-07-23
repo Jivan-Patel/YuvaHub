@@ -95,7 +95,7 @@ function startReconnectLoop(): void {
 export class MemoryCollection {
   data: any[];
   constructor(initialData: any[] = []) { this.data = initialData; }
-  find(query: any = {}) {
+  findSync(query: any = {}) {
     let result = this.data;
     for (const key in query) {
       if (key === 'id') {
@@ -123,7 +123,10 @@ export class MemoryCollection {
         result = result.filter(r => r[key] === query[key]);
       }
     }
-
+    return result;
+  }
+  find(query: any = {}) {
+    let result = this.findSync(query);
     const cursor = {
       sort: () => cursor,
       limit: (n: number) => { result = result.slice(0, n); return cursor; },
@@ -132,11 +135,11 @@ export class MemoryCollection {
     return cursor;
   }
   async findOne(query: any) {
-    const res = await this.find(query).toArray();
+    const res = this.findSync(query);
     return res[0] || null;
   }
   async updateOne(query: any, update: any, options: any = {}) {
-    const item = await this.findOne(query);
+    const item = (this.findSync(query))[0] || null;
     if (item) {
       if (update.$set) {
         Object.assign(item, update.$set);
@@ -171,7 +174,8 @@ export class MemoryCollection {
     return { modifiedCount: 0 };
   }
   async findOneAndUpdate(query: any, update: any, options: any = {}) {
-    let item = await this.findOne(query);
+    const matched = this.findSync(query);
+    let item = matched[0] || null;
     if (!item && options.upsert) {
       item = { ...query };
       if (update.$setOnInsert) {
