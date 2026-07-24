@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { dbCommand } from '../api/db.js';
+import jwt from 'jsonwebtoken';
 
 let isFirebaseInitialized = false;
 
@@ -58,7 +59,7 @@ declare global {
   }
 }
 
-export const authenticateUser = (dbCommand: any) => {
+export const authenticateUser = (db: any) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
 
@@ -72,35 +73,50 @@ export const authenticateUser = (dbCommand: any) => {
 
     try {
       let decodedToken: any = null;
+      let isCustomToken = false;
 
-      if (!isFirebaseInitialized) {
-        if (!(isDevelopment && mockAuthEnabled)) {
-          return res.status(503).json({
-            error:
-              'Authentication service unavailable. Firebase Admin is not configured.',
-          });
-        }
+      // 1. Try Custom JWT first
+      const jwtSecret = process.env.JWT_SECRET || "default_secret_for_development_only";
+      try {
+        decodedToken = jwt.verify(token, jwtSecret);
+        isCustomToken = true;
+      } catch (err) {
+        // Fallback to Firebase
+      }
 
-        console.warn('[Auth] Using mock authentication.');
+      // 2. If not a custom token, verify with Firebase
+      if (!isCustomToken) {
+        if (!isFirebaseInitialized) {
+          if (!(isDevelopment && mockAuthEnabled)) {
+            return res.status(503).json({
+              error:
+                'Authentication service unavailable. Firebase Admin is not configured.',
+            });
+          }
 
-        if (token === mockValidToken) {
-          decodedToken = {
-            uid: 'mock_user_123',
-            email: 'mock@example.com',
-            name: 'Mock User',
-          };
+          console.warn('[Auth] Using mock authentication.');
+
+          if (token === mockValidToken) {
+            decodedToken = {
+              uid: 'mock_user_123',
+              email: 'mock@example.com',
+              name: 'Mock User',
+            };
+          } else {
+            throw new Error('Invalid mock token');
+          }
         } else {
-          throw new Error('Invalid mock token');
+          decodedToken = await getAuth().verifyIdToken(token);
         }
-      } else {
-        decodedToken = await getAuth().verifyIdToken(token);
       }
 
       req.user = decodedToken;
 
-      if (dbCommand) {
+      const activeDb = db || dbCommand;
+
+      if (activeDb) {
         try {
-          const usersCollection = dbCommand.collection('users');
+          const usersCollection = activeDb.collection('users');
 
           const userDoc = await usersCollection.findOneAndUpdate(
             { firebaseUid: decodedToken.uid },

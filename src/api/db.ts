@@ -95,7 +95,7 @@ function startReconnectLoop(): void {
 export class MemoryCollection {
   data: any[];
   constructor(initialData: any[] = []) { this.data = initialData; }
-  find(query: any = {}) {
+  findSync(query: any = {}) {
     let result = this.data;
     for (const key in query) {
       if (key === 'id') {
@@ -111,6 +111,12 @@ export class MemoryCollection {
               if (cond[k].$regex) {
                 const regex = new RegExp(cond[k].$regex, cond[k].$options || "");
                 if (regex.test(r[k])) return true;
+              } else if (cond[k].$in) {
+                if (cond[k].$in.some((val: any) => {
+                  if (typeof val === 'object' && val.equals) return val.equals(r[k]);
+                  if (typeof r[k] === 'object' && r[k].equals) return r[k].equals(val);
+                  return r[k] === val || r[k]?.toString() === val?.toString();
+                })) return true;
               } else {
                 if (r[k] === cond[k]) return true;
               }
@@ -123,20 +129,28 @@ export class MemoryCollection {
         result = result.filter(r => r[key] === query[key]);
       }
     }
-
+    return result;
+  }
+  find(query: any = {}) {
+    let result = this.findSync(query);
     const cursor = {
       sort: () => cursor,
+      skip: (n: number) => { result = result.slice(n); return cursor; },
       limit: (n: number) => { result = result.slice(0, n); return cursor; },
       toArray: async () => result
     };
     return cursor;
   }
-  async findOne(query: any) {
+  async countDocuments(query: any = {}) {
     const res = await this.find(query).toArray();
+    return res.length;
+  }
+  async findOne(query: any) {
+    const res = this.findSync(query);
     return res[0] || null;
   }
   async updateOne(query: any, update: any, options: any = {}) {
-    const item = await this.findOne(query);
+    const item = (this.findSync(query))[0] || null;
     if (item) {
       if (update.$set) {
         Object.assign(item, update.$set);
@@ -170,6 +184,28 @@ export class MemoryCollection {
     }
     return { modifiedCount: 0 };
   }
+  async findOneAndUpdate(query: any, update: any, options: any = {}) {
+    const matched = this.findSync(query);
+    let item = matched[0] || null;
+    if (!item && options.upsert) {
+      item = { ...query };
+      if (update.$setOnInsert) {
+        Object.assign(item, update.$setOnInsert);
+      }
+      if (update.$set) {
+        Object.assign(item, update.$set);
+      }
+      this.data.push(item);
+      return { value: item };
+    }
+    if (item) {
+      if (update.$set) {
+        Object.assign(item, update.$set);
+      }
+      return { value: item };
+    }
+    return { value: null };
+  }
   async insertOne(doc: any) { this.data.push(doc); return { insertedId: "mock_id" }; }
   async deleteOne(query: any) {
     const initialLen = this.data.length;
@@ -179,7 +215,6 @@ export class MemoryCollection {
     }
     return { deletedCount: this.data.length < initialLen ? 1 : 0 };
   }
-  async countDocuments() { return this.data.length; }
   async createIndex(keys: any, options: any) { return "mock_index"; }
   aggregate() { return { toArray: async () => [] }; }
   initializeUnorderedBulkOp() {
@@ -267,7 +302,7 @@ export async function initializeDatabase(): Promise<void> {
     } catch (err) {
       console.error("[Database] Connection failed, falling back to Mock Data:", err);
       dbCommand = new MockDB();
-      dbQuery = new MockDB();
+      dbQuery = dbCommand;
       setupDNL(dbCommand);
       initializeSearchSync(dbQuery).catch(err => console.error('[SearchSync] Non-fatal init error:', err));
       // Kick off the background reconnection loop so the system can
@@ -277,7 +312,7 @@ export async function initializeDatabase(): Promise<void> {
   } else {
     console.log("[Database] No MONGODB_URI provided. Running in Offline Mock mode.");
     dbCommand = new MockDB();
-    dbQuery = new MockDB();
+    dbQuery = dbCommand;
     setupDNL(dbCommand);
     initializeSearchSync(dbQuery).catch(err => console.error('[SearchSync] Non-fatal init error:', err));
   }
